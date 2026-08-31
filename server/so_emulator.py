@@ -13,6 +13,7 @@ import struct
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from avatar_entity_defs import AvatarEntityDefinition
 
 from storage import (
     CharacterNameTaken,
@@ -23,6 +24,7 @@ from storage import (
     MariaDBConfig,
     MariaDBRepository,
     NoFreeCharacterSlots,
+    is_valid_world_position,
 )
 
 try:
@@ -86,19 +88,6 @@ PLAYER_WORLD_STATION_POSITION = (37.6137123, 6.853166, 66.95302)
 PLAYER_WORLD_LUBECH_POSITION = (134.237961, 3.75981, 39.83791)
 CLIENT_MSG_SPACE_DATA = 0x07
 SPACE_DATA_MAPPING_KEY_CLIENT_SERVER = 1
-
-# Avatar has 138 client-server properties in the exact interface/property
-# order from this client's entity_defs. Quester.passTutorial is index 62.
-# Since top-level indices above 60 use PropertyChange::SINGLE (61), the
-# entity-message identifier is 0x80 | (0x40 | 61) == 0xFD. The property path
-# itself is BigWorld's MSB-first stop bit (0) followed by the 8-bit index.
-PLAYER_CLIENT_SERVER_PROPERTY_COUNT = 138
-PLAYER_PASS_TUTORIAL_PROPERTY_INDEX = 62
-# EntityDescription assigns client-server indices while parsing implemented
-# interfaces and then Avatar.def itself. Avatar.defaultModels is index 117 in
-# this client build. It must be installed before createCellPlayer, otherwise
-# PlayerAvatar.onEnterWorld composes the .def all-zero fallback model.
-PLAYER_DEFAULT_MODELS_PROPERTY_INDEX = 117
 PROPERTY_CHANGE_SINGLE_ID = 61
 ENTITY_PROPERTY_FLAG = 0x40
 PLAYER_PROPERTY_MESSAGE_ID = (
@@ -140,6 +129,70 @@ FLAG_NAMES = [
 ROOT = Path(__file__).resolve().parent
 DEFAULT_RSA_JSON = ROOT / "keys" / "loginapp_private.json"
 LOG_PATH = ROOT / "so_emulator.log"
+
+
+ENTITY_DEFS_ROOT = (
+    ROOT.parent
+    / "packs"
+    / "res"
+    / "scripts"
+    / "entity_defs"
+)
+
+AVATAR_ENTITY_DEF = AvatarEntityDefinition(ENTITY_DEFS_ROOT)
+
+PLAYER_CLIENT_SERVER_PROPERTY_COUNT = (
+    AVATAR_ENTITY_DEF.client_property_count
+)
+
+PLAYER_PASS_TUTORIAL_PROPERTY_INDEX = (
+    AVATAR_ENTITY_DEF.client_property_index("passTutorial")
+)
+
+PLAYER_DEFAULT_MODELS_PROPERTY_INDEX = (
+    AVATAR_ENTITY_DEF.client_property_index("defaultModels")
+)
+
+PLAYER_NAME_PROPERTY_INDEX = (
+    AVATAR_ENTITY_DEF.client_property_index("name")
+)
+
+
+SAFE_DEFAULT_MODELS_WIRE = struct.pack(
+    "<15i",
+    0, 0, 18,
+    0, 0, 200006,
+    0, 0, 110258,
+    0, 0, 110248,
+    0, 0, 110253,
+)
+
+
+def normalise_avatar_models_wire(models: bytes) -> bytes:
+    if len(models) == 60:
+        values = struct.unpack("<15i", models)
+        type_ids = (
+            values[2],
+            values[5],
+            values[8],
+            values[11],
+            values[14],
+        )
+
+        if all(type_id > 0 for type_id in type_ids):
+            return models
+
+        log(
+            "STAGE 20: rejecting invalid defaultModels "
+            f"type_ids={type_ids!r}; using safe fallback"
+        )
+    else:
+        log(
+            "STAGE 20: rejecting invalid defaultModels "
+            f"length={len(models)}; using safe fallback"
+        )
+
+    return SAFE_DEFAULT_MODELS_WIRE
 
 
 def log(msg: str = "") -> None:
@@ -252,31 +305,62 @@ def configure_player_character(
     character: CharacterRecord,
     tutorial: int,
 ) -> None:
-    """Apply beginPlay choice while preserving a valid persisted location."""
+    """Apply beginPlay choice and reject corrupted persisted coordinates."""
     if session.world_mode != "auto":
         configure_player_world(session, tutorial)
         return
 
     requested_world = select_player_world("auto", tutorial)
-    persisted_geometry = character.last_space.encode("ascii", "ignore")
+
+    persisted_geometry = character.last_space.encode(
+        "ascii",
+        "ignore",
+    )
+
     supported = {
         PLAYER_WORLD_STATION_GEOMETRY,
         PLAYER_WORLD_LUBECH_GEOMETRY,
     }
+
+    persisted_position_valid = is_valid_world_position(
+        character.position
+    )
+
+    if not persisted_position_valid:
+        log(
+            "STAGE 20: corrupted persisted position rejected: "
+            f"character_id={character.id}, "
+            f"position={character.position!r}"
+        )
+
     may_resume = (
         persisted_geometry in supported
+        and persisted_position_valid
         and (
             persisted_geometry == requested_world.geometry
-            or (tutorial != 0 and character.is_tutorial_passed != 0)
+            or (
+                tutorial != 0
+                and character.is_tutorial_passed != 0
+            )
         )
     )
-    session.play_geometry = (
-        persisted_geometry if may_resume else requested_world.geometry
+
+    if may_resume:
+        session.play_geometry = persisted_geometry
+        session.play_position = character.position
+    else:
+        session.play_geometry = requested_world.geometry
+        session.play_position = requested_world.position
+
+    session.play_pass_tutorial = (
+        0 if tutorial == 0 else 1
     )
-    session.play_position = (
-        character.position if may_resume else requested_world.position
-    )
-    session.play_pass_tutorial = 0 if tutorial == 0 else 1
+
+    if not is_valid_world_position(session.play_position):
+        raise RuntimeError(
+            "STAGE 20 selected an invalid player spawn: "
+            f"{session.play_position!r}"
+        )
 
 
 @dataclass
@@ -369,9 +453,6 @@ class Session:
     player_base_sent: bool = False
     player_base_acked: bool = False
     player_base_seq: int = -1
-    player_models_property_sent: bool = False
-    player_models_property_acked: bool = False
-    player_models_property_seq: int = -1
     player_cell_due: float = 0.0
     player_cell_sent: bool = False
     player_cell_acked: bool = False
@@ -562,17 +643,37 @@ def describe_baseapp_messages(session: Session, message_bytes: bytes) -> dict[st
             if pos + AVATAR_UPDATE_IMPLICIT_BODY_LENGTH > len(message_bytes):
                 log("  MSG 02 avatarUpdateImplicit: TRUNCATED")
                 break
-            body = message_bytes[pos:pos + AVATAR_UPDATE_IMPLICIT_BODY_LENGTH]
+
+            body = message_bytes[
+                pos:pos + AVATAR_UPDATE_IMPLICIT_BODY_LENGTH
+            ]
             pos += AVATAR_UPDATE_IMPLICIT_BODY_LENGTH
+
             x, y, z = struct.unpack_from(">fff", body, 0)
-            yaw, pitch, roll, ref_num = struct.unpack_from("<BBBB", body, 12)
+            yaw, pitch, roll, ref_num = struct.unpack_from(
+                "<BBBB",
+                body,
+                12,
+            )
+
+            candidate_position = (x, y, z)
+
             if session.active_character_id:
-                session.play_position = (x, y, z)
-                session.position_dirty = True
+                if is_valid_world_position(candidate_position):
+                    session.play_position = candidate_position
+                    session.position_dirty = True
+                else:
+                    log(
+                        "  MSG 02 avatarUpdateImplicit: "
+                        "REJECTED INVALID POSITION "
+                        f"{candidate_position!r}"
+                    )
+
             log(
                 "  MSG 02 avatarUpdateImplicit: "
                 f"pos=({x:g}, {y:g}, {z:g}), "
-                f"dir=({yaw}, {pitch}, {roll}), refNum={ref_num}"
+                f"dir=({yaw}, {pitch}, {roll}), "
+                f"refNum={ref_num}"
             )
 
         elif msg_id == 10:
@@ -968,35 +1069,120 @@ def send_create_base_player(base_sock: socket.socket, session: Session,
     )
 
 
-def send_avatar_base_player(base_sock: socket.socket, session: Session,
-                            addr: tuple[str, int]) -> None:
-    """Switch BigWorld's base player from Account to Avatar/PlayerAvatar.
-
-    ClientInterface::createBasePlayer (ID 5) payload:
-        EntityID int32 + EntityTypeID uint16 + optional base/client properties.
-    Avatar is client EntityTypeID 1 in this SOnline build.  An empty property
-    tail intentionally asks EntityType::newDictionary() to use .def defaults.
+def send_avatar_base_player(
+    base_sock: socket.socket,
+    session: Session,
+    addr: tuple[str, int],
+) -> None:
     """
-    body = struct.pack("<iH", session.player_avatar_entity_id,
-                       session.player_avatar_type_id)
-    msg = bytes([5]) + struct.pack("<H", len(body)) + body
-    clear, encrypted, seq = build_server_channel_packet(
-        session, message_bytes=msg, reliable=True
+    Stage 20 PlayerAvatar bootstrap.
+
+    createBasePlayer receives the complete BASE_AND_CLIENT stream.
+
+    Avatar.name and Avatar.defaultModels are ALL_CLIENTS properties,
+    therefore BigWorld does not permit them inside BASE_PLAYER_DATA.
+    They are emitted immediately after createBasePlayer in the SAME
+    reliable Mercury bundle, before createCellPlayer can be scheduled.
+    """
+    if not session.begin_play_name:
+        raise RuntimeError(
+            "cannot bootstrap PlayerAvatar without Avatar.name"
+        )
+
+    models = normalise_avatar_models_wire(
+        session.active_default_models_wire
     )
-    safe_udp_sendto(base_sock, encrypted, addr, "create Avatar base player")
+    session.active_default_models_wire = models
+
+    base_property_stream = (
+        AVATAR_ENTITY_DEF.build_base_player_stream()
+    )
+
+    if not base_property_stream:
+        raise RuntimeError(
+            "PlayerAvatar BASE_PLAYER_DATA is empty"
+        )
+
+    base_body = (
+        struct.pack(
+            "<iH",
+            session.player_avatar_entity_id,
+            session.player_avatar_type_id,
+        )
+        + base_property_stream
+    )
+
+    create_base_message = (
+        bytes([5])
+        + struct.pack("<H", len(base_body))
+        + base_body
+    )
+
+    name_message = build_player_top_level_property_message(
+        session,
+        PLAYER_NAME_PROPERTY_INDEX,
+        _pack_bigworld_string(session.begin_play_name),
+    )
+
+    models_message = build_player_top_level_property_message(
+        session,
+        PLAYER_DEFAULT_MODELS_PROPERTY_INDEX,
+        models,
+    )
+
+    bootstrap_messages = (
+        create_base_message
+        + name_message
+        + models_message
+    )
+
+    clear, encrypted, seq = build_server_channel_packet(
+        session,
+        message_bytes=bootstrap_messages,
+        reliable=True,
+    )
+
+    safe_udp_sendto(
+        base_sock,
+        encrypted,
+        addr,
+        "PlayerAvatar Stage 20 bootstrap",
+    )
+
     session.player_base_sent = True
     session.player_base_seq = seq
     session.last_server_send = time.time()
+
     log(
-        f"TX AVATAR BASE PLAYER: reliable seq={seq}, "
+        "TX AVATAR BOOTSTRAP: "
+        f"reliable seq={seq}, "
         f"EntityID={session.player_avatar_entity_id}, "
         f"EntityTypeID={session.player_avatar_type_id}, "
         f"name={session.begin_play_name!r}, "
+        f"BASE_PLAYER_DATA={len(base_property_stream)} bytes, "
+        f"BASE properties={len(AVATAR_ENTITY_DEF.base_property_names)}, "
+        f"clientProperties={PLAYER_CLIENT_SERVER_PROPERTY_COUNT}, "
+        f"nameIndex={PLAYER_NAME_PROPERTY_INDEX}, "
+        f"defaultModelsIndex={PLAYER_DEFAULT_MODELS_PROPERTY_INDEX}, "
+        f"defaultModelsHeadType="
+        f"{struct.unpack_from('<i', models, 8)[0]}, "
         f"cumAck={session.client_next_expected_seq}"
     )
-    log("AVATAR BASE clear hex:\n" + hex_dump(clear))
-    log(">>> Stage 15 play milestone A: createBasePlayer(Avatar -> PlayerAvatar) sent.")
-    log(">>> Expected client: Account onBecomeNonPlayer, then PlayerAvatar base entity.\n")
+
+    log(
+        "AVATAR BOOTSTRAP clear hex:\n"
+        + hex_dump(clear)
+    )
+
+    log(
+        ">>> Stage 20 milestone A: "
+        "createBasePlayer + Avatar.name + Avatar.defaultModels "
+        "sent atomically."
+    )
+    log(
+        ">>> PlayerAvatar no longer starts from an empty "
+        "base property stream.\n"
+    )
 
 
 def build_avatar_cell_player_message(session: Session) -> bytes:
@@ -1058,47 +1244,55 @@ def pack_high_top_level_property_path(index: int, property_count: int) -> bytes:
         if bit:
             result[bit_offset // 8] |= 1 << (7 - (bit_offset % 8))
     return bytes(result)
-
-
-def build_player_default_models_message(session: Session) -> bytes:
-    """Build Avatar.defaultModels before PlayerAvatar enters the world."""
-    models = session.active_default_models_wire
-    if len(models) != 60:
+    
+    
+def build_player_top_level_property_message(
+    session: Session,
+    property_index: int,
+    value_wire: bytes,
+) -> bytes:
+    if not 0 <= property_index < PLAYER_CLIENT_SERVER_PROPERTY_COUNT:
         raise ValueError(
-            f"PACKED_AVATAR_MODEL must be 60 bytes, got {len(models)}"
+            f"Avatar client property index {property_index} "
+            f"outside count {PLAYER_CLIENT_SERVER_PROPERTY_COUNT}"
         )
-    property_path = pack_high_top_level_property_path(
-        PLAYER_DEFAULT_MODELS_PROPERTY_INDEX,
-        PLAYER_CLIENT_SERVER_PROPERTY_COUNT,
-    )
-    body = struct.pack("<i", session.player_avatar_entity_id) + property_path + models
+
+    if property_index < PROPERTY_CHANGE_SINGLE_ID:
+        msg_id = (
+            0x80
+            | ENTITY_PROPERTY_FLAG
+            | property_index
+        )
+
+        body = (
+            struct.pack(
+                "<i",
+                session.player_avatar_entity_id,
+            )
+            + value_wire
+        )
+    else:
+        msg_id = PLAYER_PROPERTY_MESSAGE_ID
+
+        property_path = pack_high_top_level_property_path(
+            property_index,
+            PLAYER_CLIENT_SERVER_PROPERTY_COUNT,
+        )
+
+        body = (
+            struct.pack(
+                "<i",
+                session.player_avatar_entity_id,
+            )
+            + property_path
+            + value_wire
+        )
+
     return (
-        bytes([PLAYER_PROPERTY_MESSAGE_ID])
+        bytes([msg_id])
         + struct.pack("<H", len(body))
         + body
     )
-
-
-def send_player_default_models(base_sock: socket.socket, session: Session,
-                               addr: tuple[str, int]) -> None:
-    msg = build_player_default_models_message(session)
-    clear, encrypted, seq = build_server_channel_packet(
-        session, message_bytes=msg, reliable=True
-    )
-    safe_udp_sendto(base_sock, encrypted, addr, "Avatar.defaultModels property")
-    session.player_models_property_sent = True
-    session.player_models_property_seq = seq
-    session.last_server_send = time.time()
-    log(
-        f"TX AVATAR defaultModels: reliable seq={seq}, "
-        f"msg=0x{PLAYER_PROPERTY_MESSAGE_ID:02x}, "
-        f"EntityID={session.player_avatar_entity_id}, "
-        f"propertyIndex={PLAYER_DEFAULT_MODELS_PROPERTY_INDEX}, "
-        f"models={session.active_default_models_wire.hex()}, "
-        f"cumAck={session.client_next_expected_seq}"
-    )
-    log("AVATAR defaultModels clear hex:\n" + hex_dump(clear))
-    log(">>> Waiting for defaultModels ACK before createCellPlayer.\n")
 
 
 def build_player_pass_tutorial_message(session: Session) -> bytes:
@@ -1690,33 +1884,71 @@ def handle_base_channel_packet(data: bytes, addr: tuple[str, int],
                 load_and_send_character_list(repository, base_sock, session, addr)
                 return
             configure_player_character(
-                session, character, session.begin_play_tutorial
+                session,
+                character,
+                session.begin_play_tutorial,
             )
+
             session.active_character_id = character.id
-            if len(character.models_wire) != 60:
-                raise ValueError(
-                    f"character {character.id} has invalid models_wire length "
-                    f"{len(character.models_wire)}"
+
+            # Canonical persisted name, not merely the RPC spelling.
+            session.begin_play_name = character.name
+
+            session.active_default_models_wire = (
+                normalise_avatar_models_wire(
+                    character.models_wire
                 )
-            session.active_default_models_wire = character.models_wire
+            )
+
+            if not is_valid_world_position(
+                session.play_position
+            ):
+                raise RuntimeError(
+                    "beginPlay produced invalid spawn position: "
+                    f"{session.play_position!r}"
+                )
+
+            # This deliberately rewrites corrupted coordinates as soon
+            # as the character is selected.
             repository.set_tutorial_and_location(
                 character.id,
                 session.play_pass_tutorial,
                 session.play_geometry.decode("ascii"),
                 session.play_position,
             )
+
+            models_values = struct.unpack(
+                "<15i",
+                session.active_default_models_wire,
+            )
+
             log(
                 f">>> Loaded character_id={character.id}, "
+                f"name={character.name!r}, "
                 f"world={session.play_geometry.decode('ascii')!r}, "
                 f"position={session.play_position!r}, "
-                f"passTutorial={session.play_pass_tutorial}."
+                f"passTutorial={session.play_pass_tutorial}, "
+                f"defaultModelTypeIDs="
+                f"{models_values[2::3]!r}."
             )
+
         except Exception as exc:
-            log(f"DATABASE ERROR during beginPlay: {exc}")
-            send_channel_ack(base_sock, session, addr, "beginPlay DB error")
+            log(
+                f"DATABASE/BOOTSTRAP ERROR during beginPlay: {exc}"
+            )
+            send_channel_ack(
+                base_sock,
+                session,
+                addr,
+                "beginPlay bootstrap error",
+            )
             return
-        # This reliable packet also cumulatively ACKs the client's beginPlay.
-        send_avatar_base_player(base_sock, session, addr)
+
+        send_avatar_base_player(
+            base_sock,
+            session,
+            addr,
+        )
         return
 
     if (
@@ -1806,32 +2038,27 @@ def handle_base_channel_packet(data: bytes, addr: tuple[str, int],
         and not session.player_base_acked
         and session.player_base_seq >= 0
         and packet.cumulative_ack is not None
-        and packet.cumulative_ack >= session.player_base_seq + 1
+        and packet.cumulative_ack
+        >= session.player_base_seq + 1
     ):
         session.player_base_acked = True
-        log(f">>> AVATAR BASE PLAYER ACK confirmed: cumulativeAck={packet.cumulative_ack}")
-        log(">>> Setting persisted defaultModels before createCellPlayer.\n")
-        if not session.player_models_property_sent:
-            send_player_default_models(base_sock, session, addr)
-        return
-
-    if (
-        session.player_models_property_sent
-        and not session.player_models_property_acked
-        and session.player_models_property_seq >= 0
-        and packet.cumulative_ack is not None
-        and packet.cumulative_ack >= session.player_models_property_seq + 1
-    ):
-        session.player_models_property_acked = True
         session.player_cell_due = time.time() + 0.25
+
         log(
-            f">>> AVATAR defaultModels ACK confirmed: "
+            ">>> STAGE 20 PLAYERAVATAR BOOTSTRAP ACK: "
             f"cumulativeAck={packet.cumulative_ack}"
         )
-        log(">>> createCellPlayer scheduled in 0.25 s.\n")
+        log(
+            ">>> createBasePlayer + name + defaultModels "
+            "accepted by client."
+        )
+        log(
+            ">>> createCellPlayer scheduled in 0.25 s.\n"
+        )
+
         if not packet.message_bytes:
             return
-
+    
     if (
         session.player_cell_sent
         and not session.player_cell_acked
@@ -2499,14 +2726,16 @@ def main() -> None:
                         log(f"DATABASE ERROR in character-list timer: {exc}")
 
                 if (
-                    session.player_models_property_acked
+                    session.player_base_acked
                     and not session.player_cell_sent
                     and session.player_cell_due > 0.0
                     and now_ts >= session.player_cell_due
                     and session.base_client_addr is not None
                 ):
                     send_avatar_cell_player(
-                        base_sock, session, session.base_client_addr
+                        base_sock,
+                        session,
+                        session.base_client_addr,
                     )
 
                 if (
@@ -2531,6 +2760,16 @@ def main() -> None:
                     and session.position_dirty
                     and now_ts - session.last_position_save >= 5.0
                 ):
+                    if not is_valid_world_position(
+                        session.play_position
+                    ):
+                        log(
+                            "STAGE 20: dirty position rejected before DB save: "
+                            f"{session.play_position!r}"
+                        )
+                        session.position_dirty = False
+                        continue
+
                     try:
                         repository.update_position(
                             session.active_character_id,
@@ -2540,7 +2779,10 @@ def main() -> None:
                         session.position_dirty = False
                         session.last_position_save = now_ts
                     except Exception as exc:
-                        log(f"DATABASE ERROR while saving position: {exc}")
+                        log(
+                            "DATABASE ERROR while saving position: "
+                            f"{exc}"
+                        )
 
             # Keep established BaseApp channels alive using the separate
             # non-reliable sequence space confirmed by the real client.
@@ -2562,7 +2804,14 @@ def main() -> None:
         log("\nStopped.")
     finally:
         for session in sessions:
-            if session.active_character_id and session.position_dirty:
+            for session in sessions:
+            if (
+                session.active_character_id
+                and session.position_dirty
+                and is_valid_world_position(
+                    session.play_position
+                )
+            ):
                 try:
                     repository.update_position(
                         session.active_character_id,
@@ -2570,7 +2819,10 @@ def main() -> None:
                         session.play_position,
                     )
                 except Exception as exc:
-                    log(f"DATABASE ERROR during final position save: {exc}")
+                    log(
+                        "DATABASE ERROR during final position save: "
+                        f"{exc}"
+                    )
         login_sock.close()
         base_sock.close()
 

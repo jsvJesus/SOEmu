@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 import os
 import re
 import time
@@ -109,6 +110,46 @@ def _new_password_record(password: str) -> tuple[bytes, bytes]:
 def _verify_password(password: str, salt: bytes, expected: bytes) -> bool:
     return hmac.compare_digest(_password_hash(password, salt), expected)
 
+    
+MAX_ABS_WORLD_COORD = 100000.0
+
+
+def is_valid_world_position(
+    position: tuple[float, float, float],
+) -> bool:
+    if len(position) != 3:
+        return False
+
+    try:
+        x, y, z = (
+            float(position[0]),
+            float(position[1]),
+            float(position[2]),
+        )
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+    return all(
+        math.isfinite(value)
+        and abs(value) <= MAX_ABS_WORLD_COORD
+        for value in (x, y, z)
+    )
+    
+    
+def require_valid_world_position(
+    position: tuple[float, float, float],
+) -> tuple[float, float, float]:
+    if not is_valid_world_position(position):
+        raise StorageError(
+            f"refusing invalid world position: {position!r}"
+        )
+
+    return (
+        float(position[0]),
+        float(position[1]),
+        float(position[2]),
+    )
+    
 
 class MariaDBRepository:
     """Small synchronous repository for SOEmu's current single process."""
@@ -351,6 +392,8 @@ class MariaDBRepository:
         space: str,
         position: tuple[float, float, float],
     ) -> None:
+        position = require_valid_world_position(position)
+
         with self._connect() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -372,6 +415,8 @@ class MariaDBRepository:
         space: str,
         position: tuple[float, float, float],
     ) -> None:
+        position = require_valid_world_position(position)
+
         with self._connect() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(

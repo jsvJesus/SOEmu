@@ -1,5 +1,6 @@
 @echo off
 setlocal
+set "SOEMU_DB_PASSWORD=Milion16"
 cd /d "%~dp0server"
 echo Checking Python dependencies: cryptography, PyMySQL...
 python -c "import cryptography, pymysql" >nul 2>nul

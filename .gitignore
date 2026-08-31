@@ -1,3 +1,10 @@
+packs/res/audio/stream_space_dark1.fsb
+packs/res/audio/stream_space_dark13.fsb
+packs/res/audio/stream_space_dark2.fsb
+packs/res/audio/stream_space_underground.fsb
+packs/res/audio/stream_space_volcano.fsb
+packs/res/audio/stream_stalkerfilm_monolog.fsb
+
 __pycache__/
 *.py[cod].new
 *.log
