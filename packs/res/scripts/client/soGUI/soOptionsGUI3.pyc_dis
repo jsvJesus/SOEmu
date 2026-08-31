@@ -1,0 +1,1448 @@
+# Embedded file name: scripts/client/soGUI/soOptionsGUI3.py
+from Localization import lc
+import BigWorld
+import GUI
+import Helpers.PyGUI as PyGUI
+import soGUI
+import BWPersonality
+import Helpers.PyGUI.PyGUIBase as PyGUIBase
+from Helpers.PyGUI import PyGUIEvent
+from soGUI.soButton import soButton
+from soGUI.soSlider import soSlider
+from soGUI.soDropDownList import soDropDownList, soDropDownList2
+from soGUI.soCheckBox import soCheckBox
+from functools import partial
+from soGUI.soTableComponent import soTableComponent2, soTablePropsStructure, soTableElemPropsStructure
+from soGUI.soEditField import soEditField2
+from soGUI.soScrollBar import soScrollBar2
+from Keys import *
+from math import ceil, floor
+from Helpers import BWKeyBindings
+from Settings import Settings
+MODIFIER_CODES = []
+
+class soOptionsGUI3(PyGUIBase):
+    factoryString = 'soGUI.soOptionsGUI3'
+    settings_list = ['TEXTURE_QUALITY',
+     'SHADOWS_QUALITY',
+     'TEXTURE_FILTERING',
+     'SPEEDTREE_QUALITY',
+     'WATER_QUALITY',
+     'SSAO',
+     'FAR_PLANE',
+     'WATER_SIMULATION',
+     'SHADOWS_COUNT',
+     'TERRAIN_MESH_RESOLUTION',
+     'FOOT_PRINTS',
+     'god rays',
+     'FLORA_DENSITY',
+     'DYNAMIC_SHADOW']
+    VIDEO_QUALITY_CUSTOM = 0
+    VIDEO_QUALITY_LOW = 1
+    VIDEO_QUALITY_NORMAL = 2
+    VIDEO_QUALITY_HIGH = 3
+    VIDEO_QUALITY_ULTRA = 4
+    EVENT_OPTIONSET = 3
+    EVENT_CANCEL = 1
+    EVENT_APPLY = 2
+    EVENT_APPLY_SETTINGS = 8
+    EVENT_KEYBINDS_DEFAULT = 6
+    COLORFONT = (140,
+     141,
+     126,
+     255)
+    VQ_LABELS = {VIDEO_QUALITY_CUSTOM: lc('soOptionsGUI.soGUI.STRING_369_26'),
+     VIDEO_QUALITY_LOW: lc('soOptionsGUI.soGUI.STRING_370_23'),
+     VIDEO_QUALITY_NORMAL: lc('soOptionsGUI.soGUI.STRING_371_26'),
+     VIDEO_QUALITY_HIGH: lc('soOptionsGUI.soGUI.STRING_372_24'),
+     VIDEO_QUALITY_ULTRA: lc('soOptionsGUI.soGUI.STRING_373_25')}
+
+    def __init__(self, component, callback = None):
+        PyGUIBase.__init__(self, component)
+        component.script = self
+        self.interfaceID = BWPersonality.GUICore.GUI_ID_OPTIONS_NEW
+        self.currentTab = None
+        self.expertWnd = None
+        self.callback = callback
+        self.mainIndent = 50
+        self.AddIndent = 91
+        self.widthButton = 200
+        self.TopVerticalIndent = 35
+        self.VerticalIndentBetweenButton = 5
+        self.height = 21
+        self.vIndent = 5
+        self.lastPressed = BigWorld.time()
+        self.lastRow = 0
+        self.data = self.getData()
+        self.keyTable_captionDS = {'font': 'ruRU_calibri_large.font',
+         'color': (28, 28, 28, 255),
+         'hoverColor': (28, 28, 28, 255),
+         'selectColor': (28, 28, 28, 255),
+         'toolTipID': None,
+         'contentColor': self.COLORFONT,
+         'contentColorHover': self.COLORFONT,
+         'contentColorSelect': self.COLORFONT}
+        self.keyTable_dataDS = {'font': 'ruRU_calibri_large.font',
+         'color': (255, 255, 255, 0),
+         'hoverColor': (255, 255, 255, 0),
+         'selectColor': (36, 36, 36, 255),
+         'toolTipID': None,
+         'contentColor': self.COLORFONT,
+         'contentColorHover': self.COLORFONT,
+         'contentColorSelect': self.COLORFONT}
+        self.keyTable_dataDS2 = {'font': 'ruRU_calibri_large.font',
+         'color': (255, 255, 255, 0),
+         'hoverColor': (255, 255, 255, 0),
+         'selectColor': (28, 28, 28, 255),
+         'toolTipID': None,
+         'contentColor': self.COLORFONT,
+         'contentColorHover': self.COLORFONT,
+         'contentColorSelect': self.COLORFONT}
+        self.setupRoot()
+        self.setupOptionsFrame()
+        self.setupSettingsList()
+        self.setupMainVideoFrame()
+        self.setupAddVideoFrame()
+        self.setupAudioFrame()
+        self.setupControlFrame()
+        self.component.visible = False
+        return
+
+    def setupRoot(self):
+        widthScreen, heightScreen = BigWorld.screenSize()
+        cmp = self.component
+        cmp.horizontalPositionMode = 'PIXEL'
+        cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = 'PIXEL'
+        cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.colour = (255, 255, 255, 255)
+        cmp.materialFX = 'BLEND'
+        width, height = BigWorld.screenSize()
+        cmp.width = widthScreen
+        cmp.height = heightScreen
+        cmp.textureName = 'soGUI/maps/Login/bg.jpg'
+        cmp.filterType = 'LINEAR'
+        cmp.position = (0.0, 0.0, 0.3)
+
+    def setupOptionsFrame(self):
+        widthScreen, heightScreen = BigWorld.screenSize()
+        cmp = GUI.Window('soGUI/maps/Options/leftWindow.dds')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.colour = (255, 255, 255, 255)
+        cmp.materialFX = 'BLEND'
+        cmp.filterType = 'LINEAR'
+        cmp.width = 300
+        cmp.height = heightScreen
+        cmp.position = (-1.0, 1.0, 0.9)
+        cmp.visible = True
+        self.component.addChild(cmp, 'leftWnd')
+        cmp = GUI.Simple('soGUI/maps/Colours/white.tga')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.colour = (74, 74, 74, 255)
+        cmp.materialFX = 'BLEND'
+        cmp.width = 2
+        cmp.height = heightScreen
+        cmp.position = (299, 0, 0.8)
+        self.component.addChild(cmp, 'verticalWhiteLine')
+        cmp = GUI.Frame2('soGUI/maps/Options/rightWindow.dds')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.colour = (255, 255, 255, 255)
+        cmp.materialFX = 'BLEND'
+        cmp.width = widthScreen - 300
+        cmp.height = heightScreen
+        cmp.position = (300, 0, 0.9)
+        self.component.addChild(cmp, 'rightWin')
+        btn = soButton(GUI.Window(), default_label_horizontal_anchor='CENTER', default_PositionMode='CLIP', isOptions=True, fontLabel='ruRU_calibri_large.font')
+        btn.initVSC('soGUI/visual_styles/settingsBtn.xml')
+        btn.fontColor = self.COLORFONT
+        btn.onBound()
+        btn.onClick = self.onApplyBtn
+        cmp = btn.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'RIGHT'
+        cmp.verticalAnchor = 'BOTTOM'
+        cmp.width = self.widthButton
+        cmp.height = self.height
+        cmp.textureName = ''
+        cmp.height = 36
+        cmp.width = 183
+        cmp.position = (widthScreen - 114, heightScreen - 115, 1)
+        cmp.colour = (255, 255, 255, 255)
+        cmp.visible = 1
+        cmp.materialFX = 'BLEND'
+        cmp.label.text = lc('soOptionsGUI.soGUI.STRING_180_19')
+        self.component.rightWin.addChild(cmp, 'applyBtn')
+        btn = soButton(GUI.Window(), default_label_horizontal_anchor='CENTER', default_PositionMode='CLIP', isOptions=True, fontLabel='ruRU_calibri_large.font')
+        btn.initVSC('soGUI/visual_styles/settingsBtn.xml')
+        btn.fontColor = self.COLORFONT
+        btn.onBound()
+        btn.onClick = self.onCancelBtn
+        cmp = btn.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'RIGHT'
+        cmp.verticalAnchor = 'BOTTOM'
+        cmp.width = self.widthButton
+        cmp.height = self.height
+        cmp.textureName = ''
+        cmp.height = 36
+        cmp.width = 183
+        cmp.position = (widthScreen - 114, heightScreen - 76, 1)
+        cmp.colour = (255, 255, 255, 255)
+        cmp.visible = 1
+        cmp.materialFX = 'BLEND'
+        cmp.label.text = lc('soOptionsGUI.soGUI.STRING_159_19')
+        self.component.rightWin.addChild(cmp, 'cancelBtn')
+
+    def setupSettingsList(self):
+        ws, hs = BigWorld.screenSize()
+        btn = soButton(GUI.Window(), default_label_horizontal_anchor='LEFT', default_PositionMode='PIXEL')
+        cmp = btn.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'BOTTOM'
+        cmp.width = self.widthButton
+        cmp.height = self.height
+        cmp.textureName = ''
+        cmp.position = (self.mainIndent, self.TopVerticalIndent, 0.1)
+        cmp.colour = (255, 255, 255, 255)
+        cmp.materialFX = 'BLEND'
+        cmp.label.text = lc('soOptionsGUI.soGUI.STRING_365_15')
+        btn.onClick = self.onvideoBtn
+        self.component.leftWnd.addChild(cmp, 'videoBtn')
+        btn.initVSC('soGUI/visual_styles/settingsMenuBtnEmpty.xml')
+        btn.onBound()
+        btn._updateVisualState()
+        btn = soButton(GUI.Window(), default_label_horizontal_anchor='LEFT', default_PositionMode='PIXEL')
+        cmp = btn.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'BOTTOM'
+        cmp.width = self.widthButton
+        cmp.height = self.height
+        cmp.textureName = ''
+        cmp.position = (self.AddIndent, self.TopVerticalIndent + self.height + self.VerticalIndentBetweenButton, 0.1)
+        cmp.colour = (255, 255, 255, 255)
+        cmp.materialFX = 'BLEND'
+        cmp.label.text = lc('soOptionsGUI.soGUI.STRING_MAIN_VIDEO_SETTINGS')
+        cmp.visible = 0
+        btn.onClick = self.onMainVideoBtn
+        self.component.leftWnd.addChild(cmp, 'mainVideoBtn')
+        btn.initVSC('soGUI/visual_styles/settingsMenuBtnEmpty.xml')
+        btn.onBound()
+        btn._updateVisualState()
+        btn = soButton(GUI.Window(), default_label_horizontal_anchor='LEFT', default_PositionMode='PIXEL')
+        cmp = btn.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'BOTTOM'
+        cmp.width = self.widthButton
+        cmp.height = self.height
+        cmp.textureName = ''
+        cmp.position = (self.AddIndent, self.TopVerticalIndent + self.height * 2 + self.VerticalIndentBetweenButton, 0.1)
+        cmp.colour = (255, 255, 255, 255)
+        cmp.materialFX = 'BLEND'
+        cmp.label.text = lc('soOptionsGUI.soGUI.ADDITIONL_VIDEO_SETTINGS')
+        cmp.visible = 0
+        btn.onClick = self.onAddVideoSettings
+        self.component.leftWnd.addChild(cmp, 'addVideoBtn')
+        btn.initVSC('soGUI/visual_styles/settingsMenuBtnEmpty.xml')
+        btn.onBound()
+        btn._updateVisualState()
+        btn = soButton(GUI.Window(), default_label_horizontal_anchor='LEFT', default_PositionMode='PIXEL')
+        cmp = btn.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'BOTTOM'
+        cmp.width = self.widthButton
+        cmp.height = self.height
+        cmp.textureName = ''
+        cmp.position = (self.mainIndent, self.TopVerticalIndent + self.height + self.VerticalIndentBetweenButton, 0.1)
+        cmp.colour = (255, 255, 255, 255)
+        cmp.materialFX = 'BLEND'
+        cmp.label.text = lc('soOptionsGUI.soGUI.STRING_364_15')
+        btn.onClick = self.onAudioBtn
+        self.component.leftWnd.addChild(cmp, 'audioBtn')
+        btn.initVSC('soGUI/visual_styles/settingsMenuBtnEmpty.xml')
+        btn.onBound()
+        btn._updateVisualState()
+        btn = soButton(GUI.Window(), default_label_horizontal_anchor='LEFT', default_PositionMode='PIXEL')
+        cmp = btn.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'BOTTOM'
+        cmp.width = self.widthButton
+        cmp.height = self.height
+        cmp.textureName = ''
+        cmp.position = (self.mainIndent, self.TopVerticalIndent + self.height * 2 + self.VerticalIndentBetweenButton * 2, 1)
+        cmp.colour = (255, 255, 255, 255)
+        cmp.visible = 1
+        cmp.materialFX = 'BLEND'
+        cmp.label.text = lc('soOptionsGUI.soGUI.CONTROL_SETTINGS')
+        btn.onClick = self.onControlBtn
+        self.component.leftWnd.addChild(cmp, 'controlBtn')
+        btn.initVSC('soGUI/visual_styles/settingsMenuBtnEmpty.xml')
+        btn.onBound()
+        btn._updateVisualState()
+        btn = soButton(GUI.Window(), default_label_horizontal_anchor='LEFT', default_PositionMode='PIXEL')
+        cmp = btn.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'BOTTOM'
+        cmp.width = self.widthButton
+        cmp.height = self.height
+        cmp.textureName = ''
+        cmp.position = (self.AddIndent, self.TopVerticalIndent + self.height * 3 + self.VerticalIndentBetweenButton * 2, 1)
+        cmp.colour = (255, 255, 255, 255)
+        cmp.visible = 0
+        cmp.materialFX = 'BLEND'
+        cmp.label.text = lc('soOptionsGUI.soGUI.STRING_363_15')
+        btn.onClick = self.onMouseBtn
+        self.component.leftWnd.addChild(cmp, 'MouseBtn')
+        btn.initVSC('soGUI/visual_styles/settingsMenuBtnEmpty.xml')
+        btn.onBound()
+        btn._updateVisualState()
+        btn = soButton(GUI.Window(), default_label_horizontal_anchor='LEFT', default_PositionMode='PIXEL')
+        cmp = btn.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'BOTTOM'
+        cmp.width = self.widthButton
+        cmp.height = self.height
+        cmp.textureName = ''
+        cmp.position = (self.AddIndent, self.TopVerticalIndent + self.height * 4 + self.VerticalIndentBetweenButton * 2, 1)
+        cmp.colour = (255, 255, 255, 255)
+        cmp.visible = 0
+        cmp.materialFX = 'BLEND'
+        cmp.label.text = lc('soOptionsGUI.soGUI.STRING_362_18')
+        btn.onClick = self.onKeyboardBtn
+        self.component.leftWnd.addChild(cmp, 'keyboardBtn')
+        btn.initVSC('soGUI/visual_styles/settingsMenuBtnEmpty.xml')
+        btn.onBound()
+        btn._updateVisualState()
+        btn = soButton(GUI.Window(), default_label_horizontal_anchor='LEFT', default_PositionMode='PIXEL')
+        cmp = btn.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'BOTTOM'
+        cmp.width = self.widthButton
+        cmp.height = self.height
+        cmp.textureName = ''
+        cmp.position = (148, hs - 76, 1)
+        cmp.colour = (255, 255, 255, 255)
+        cmp.visible = 1
+        cmp.materialFX = 'BLEND'
+        cmp.label.text = lc('soOptionsGUI.soGUI.BACK')
+        btn.onClick = self.onBackBtn
+        self.component.leftWnd.addChild(cmp, 'backBtn')
+        btn.initVSC('soGUI/visual_styles/settingsMenuBtnEmpty.xml')
+        btn.onBound()
+        btn._updateVisualState()
+
+    def setupMainVideoFrame(self):
+        ws, hs = BigWorld.screenSize()
+        cmp = GUI.Frame2('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.colour = (255, 255, 255, 255)
+        cmp.materialFX = 'BLEND'
+        cmp.width = ws - 300 - 228
+        cmp.height = hs - 228
+        cmp.position = (414, 114, 0.9)
+        cmp.visible = 0
+        self.component.rightWin.addChild(cmp, 'mainVideoSettings')
+        cmp = GUI.Text('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.position = (429, 144 + self.vIndent, 0.3)
+        cmp.text = lc('soOptionsGUI.soGUI.STRING_1068_13')
+        self.component.rightWin.mainVideoSettings.addChild(cmp, 'label_screen_resolution')
+        cmp = GUI.Text('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.position = (429, 114 + 60 + self.vIndent, 0.3)
+        cmp.text = lc('soOptionsGUI.soGUI.STRING_1080_13')
+        self.component.rightWin.mainVideoSettings.addChild(cmp, 'label_Quality_graphic')
+        cmp = GUI.Text('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.visible = False
+        cmp.position = (429, 114 + 90 + self.vIndent, 0.3)
+        cmp.text = lc('soOptionsGUI.soGUI.STRING_1091_13')
+        self.component.rightWin.mainVideoSettings.addChild(cmp, 'label_Windowed')
+        cmp = GUI.Text('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.position = (429, 114 + 90 + self.vIndent, 0.3)
+        cmp.text = lc('soOptionsGUI.soGUI.STRING_1159_73')
+        self.component.rightWin.mainVideoSettings.addChild(cmp, 'label_WindowMode')
+        ddl = soDropDownList2(GUI.Window(), width=280, height=24, VS='soGUI/visual_styles/options_DDL.xml', isOptions=True, colorFont=self.COLORFONT)
+        ddl.component.label.colour = self.COLORFONT
+        cmp = ddl.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'RIGHT'
+        cmp.verticalAnchor = 'TOP'
+        ddl.onSelectedElement = self.ScreenRes_onSelectedElement
+        cmp.position = (ws - 114, 130 + self.vIndent, 0.3)
+        self.component.rightWin.mainVideoSettings.addChild(cmp, 'ddl_resolution')
+        ddl = soDropDownList2(GUI.Window(), width=280, height=24, VS='soGUI/visual_styles/options_DDL.xml', isOptions=True, colorFont=self.COLORFONT)
+        cmp = ddl.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'RIGHT'
+        cmp.verticalAnchor = 'TOP'
+        ddl.onSelectedElement = self.Quality_onSelectedElement
+        cmp.position = (ws - 114, 100 + 60 + self.vIndent, 0.3)
+        self.component.rightWin.mainVideoSettings.addChild(cmp, 'quality')
+        elems = [[self.VIDEO_QUALITY_CUSTOM, lc('soOptionsGUI.soGUI.STRING_369_26')],
+         [self.VIDEO_QUALITY_LOW, lc('soOptionsGUI.soGUI.STRING_1038_29')],
+         [self.VIDEO_QUALITY_NORMAL, lc('soOptionsGUI.soGUI.STRING_1039_32')],
+         [self.VIDEO_QUALITY_HIGH, lc('soOptionsGUI.soGUI.STRING_1040_30')],
+         [self.VIDEO_QUALITY_ULTRA, lc('soOptionsGUI.soGUI.STRING_1041_31')]]
+        ddl.onBound()
+        ddl.addElements(elems)
+        ddl = soDropDownList2(GUI.Window(), width=280, height=24, VS='soGUI/visual_styles/options_DDL.xml', isOptions=True, colorFont=self.COLORFONT)
+        cmp = ddl.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'RIGHT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.visible = False
+        cmp.position = (ws - 114, 100 + 90 + self.vIndent, 0.3)
+        ddl.onSelectedElement = self.onSelectedElement
+        self.component.rightWin.mainVideoSettings.addChild(cmp, 'ddl_screenMode')
+        ddl.onBound()
+        i = 1
+        while i < 4:
+            cmp = GUI.Simple('soGUI/maps/Options/_line.tga')
+            cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+            cmp.widthMode = cmp.heightMode = 'PIXEL'
+            cmp.horizontalAnchor = 'LEFT'
+            cmp.verticalAnchor = 'CENTER'
+            cmp.colour = (255, 255, 255, 255)
+            cmp.materialFX = 'BLEND'
+            cmp.width = ws - 300 - 114 - 15 - 114
+            cmp.height = 21
+            cmp.position = (429, 122 + 29 * i, 1.0)
+            cmp.visible = 1
+            self.component.rightWin.mainVideoSettings.addChild(cmp, 'line' + str(i))
+            i = i + 1
+
+        cb = soCheckBox(GUI.Window(), default_style='soGUI/visual_styles/checkBoxSettings.xml')
+        cmp = cb.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.colour = (255, 255, 255, 255)
+        cmp.materialFX = 'BLEND'
+        cmp.position = (ws - 114 - 280, 103 + 90 + self.vIndent, 0.3)
+        self.component.rightWin.mainVideoSettings.addChild(cmp, 'windowed')
+        cb.onBound()
+
+    def setupAddVideoFrame(self):
+        ws, hs = BigWorld.screenSize()
+        additionValue = BWPersonality.settings.getAdditionOptionValue()
+        cmp = GUI.Frame2('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.colour = (255, 255, 255, 255)
+        cmp.materialFX = 'BLEND'
+        cmp.width = ws - 300 - 228
+        cmp.height = hs - 228
+        cmp.position = (414, 114, 0.9)
+        cmp.visible = 0
+        self.component.rightWin.addChild(cmp, 'addVideoSettings')
+        i = 1
+        while i < 12:
+            if i % 2 == 1:
+                cmp = GUI.Simple('soGUI/maps/Options/_line.tga')
+                cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+                cmp.widthMode = cmp.heightMode = 'PIXEL'
+                cmp.horizontalAnchor = 'LEFT'
+                cmp.verticalAnchor = 'CENTER'
+                cmp.colour = (255, 255, 255, 255)
+                cmp.materialFX = 'BLEND'
+                cmp.width = ws - 300 - 114 - 15 - 114
+                cmp.height = 24
+                cmp.position = (429, 119 + 30 * i, 1.0)
+                cmp.visible = 1
+                self.component.rightWin.addVideoSettings.addChild(cmp, 'line' + str(i))
+            i = i + 1
+
+        cmp = GUI.Text('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.position = (429, 144 + self.vIndent, 0.3)
+        cmp.text = lc('soOptionsGUI.soGUI.STRING_1081_13')
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'label_quality_texture')
+        cmp = GUI.Text('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.position = (429, 114 + 60 + self.vIndent, 0.3)
+        cmp.text = lc('soOptionsGUI.soGUI.STRING_1085_13')
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'label_quality_water')
+        cmp = GUI.Text('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.position = (429, 114 + 90 + self.vIndent, 0.3)
+        cmp.text = lc('soOptionsGUI.soGUI.STRING_1086_13')
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'label_SSAO')
+        cmp = GUI.Text('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.position = (429, 114 + 120 + self.vIndent, 0.3)
+        cmp.text = lc('soOptionsGUI.soGUI.STRING_1093_13')
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'label_show_footprint')
+        cmp = GUI.Text('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.position = (429, 114 + 150 + self.vIndent, 0.3)
+        cmp.text = lc('soOptionsGUI.soGUI.STRING_1083_13')
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'label_texture_filter')
+        cmp = GUI.Text('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.position = (429, 114 + 180 + self.vIndent, 0.3)
+        cmp.text = lc('soOptionsGUI.soGUI.isVISIBLE')
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'label_visible')
+        cmp = GUI.Text('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.position = (429, 114 + 210 + self.vIndent, 0.3)
+        cmp.text = lc('soOptionsGUI.soGUI.STRING_1095_13')
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'label_GodRays')
+        cmp = GUI.Text('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.position = (429, 114 + 240 + self.vIndent, 0.3)
+        cmp.text = lc('soOptionsGUI.soGUI.STRING_1084_13')
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'label_quality_tree')
+        cmp = GUI.Text('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.position = (429, 114 + 270 + self.vIndent, 0.3)
+        cmp.text = lc('soOptionsGUI.soGUI.STRING_1088_13')
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'label_water_simulation')
+        cmp = GUI.Text('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.position = (429, 114 + 300 + self.vIndent, 0.3)
+        cmp.text = lc('soOptionsGUI.soGUI.STRING_1094_13')
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'label_densityFlora')
+        cmp = GUI.Text('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.position = (429, 114 + 330 + self.vIndent, 0.3)
+        cmp.text = 'Dynamic shadows'
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'label_dynamicShadow')
+        ddl = soDropDownList2(GUI.Window(), width=280, height=24, VS='soGUI/visual_styles/options_DDL.xml', isOptions=True, colorFont=self.COLORFONT)
+        cmp = ddl.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'RIGHT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (ws - 114, 130 + self.vIndent, 0.3)
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'ddl_texture_quality')
+        ddl.onBound()
+        options = self.data['TEXTURE_QUALITY']['options']
+        ddl.addElements(list(enumerate(options)))
+        ddl.setSelectionByText(options[self.data['TEXTURE_QUALITY']['current']], True, silent=True)
+        ddl = soDropDownList2(GUI.Window(), width=280, height=24, VS='soGUI/visual_styles/options_DDL.xml', isOptions=True, colorFont=self.COLORFONT)
+        cmp = ddl.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'RIGHT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (ws - 114, 100 + 60 + self.vIndent, 0.3)
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'ddl_water_quality')
+        ddl.onBound()
+        options = self.data['WATER_QUALITY']['options']
+        ddl.addElements(list(enumerate(options)))
+        ddl.setSelectionByText(options[self.data['WATER_QUALITY']['current']], True, silent=True)
+        ddl = soDropDownList2(GUI.Window(), width=280, height=24, VS='soGUI/visual_styles/options_DDL.xml', isOptions=True, colorFont=self.COLORFONT)
+        cmp = ddl.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'RIGHT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (ws - 114, 100 + 90 + self.vIndent, 0.3)
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'SSAO')
+        ddl.onBound()
+        options = additionValue['SSAO'][1]
+        ddl.addElements(list(enumerate(options)))
+        ddl.setSelectionByValue(additionValue['SSAO'][0], True)
+        ddl = soDropDownList2(GUI.Window(), width=280, height=24, VS='soGUI/visual_styles/options_DDL.xml', isOptions=True, colorFont=self.COLORFONT)
+        cmp = ddl.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'RIGHT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (ws - 114, 100 + 120 + self.vIndent, 0.3)
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'ddl_foot_prints')
+        ddl.onBound()
+        options = self.data['FOOT_PRINTS']['options']
+        ddl.addElements(list(enumerate(options)))
+        ddl.setSelectionByText(options[self.data['FOOT_PRINTS']['current']], True, silent=True)
+        ddl = soDropDownList2(GUI.Window(), width=280, height=24, VS='soGUI/visual_styles/options_DDL.xml', isOptions=True, colorFont=self.COLORFONT)
+        cmp = ddl.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'RIGHT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (ws - 114, 100 + 150 + self.vIndent, 0.3)
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'ddl_smoothing')
+        ddl.onBound()
+        options = self.data['TEXTURE_FILTERING']['options']
+        ddl.addElements(list(enumerate(options)))
+        ddl.setSelectionByText(options[self.data['TEXTURE_FILTERING']['current']], True, silent=True)
+        ddl = soDropDownList2(GUI.Window(), width=280, height=24, VS='soGUI/visual_styles/options_DDL.xml', isOptions=True, colorFont=self.COLORFONT)
+        cmp = ddl.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'RIGHT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (ws - 114, 100 + 180 + self.vIndent, 0.3)
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'ddl_far_plane')
+        ddl.onBound()
+        options = self.data['FAR_PLANE']['options']
+        ddl.addElements(list(enumerate(options)))
+        ddl.setSelectionByText(options[self.data['FAR_PLANE']['current']], True, silent=True)
+        ddl = soDropDownList2(GUI.Window(), width=280, height=24, VS='soGUI/visual_styles/options_DDL.xml', isOptions=True, colorFont=self.COLORFONT)
+        cmp = ddl.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'RIGHT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (ws - 114, 100 + 210 + self.vIndent, 0.3)
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'ddl_god_rays')
+        ddl.onBound()
+        options = additionValue['god rays'][1]
+        ddl.addElements(list(enumerate(options)))
+        ddl.setSelectionByValue(additionValue['god rays'][0], True)
+        ddl = soDropDownList2(GUI.Window(), width=280, height=24, VS='soGUI/visual_styles/options_DDL.xml', isOptions=True, colorFont=self.COLORFONT)
+        cmp = ddl.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'RIGHT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (ws - 114, 100 + 240 + self.vIndent, 0.3)
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'ddl_speedtree_quality')
+        ddl.onBound()
+        options = self.data['SPEEDTREE_QUALITY']['options']
+        ddl.addElements(list(enumerate(options)))
+        ddl.setSelectionByText(options[self.data['SPEEDTREE_QUALITY']['current']], True, silent=True)
+        ddl = soDropDownList2(GUI.Window(), width=280, height=24, VS='soGUI/visual_styles/options_DDL.xml', isOptions=True, colorFont=self.COLORFONT)
+        cmp = ddl.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'RIGHT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (ws - 114, 100 + 270 + self.vIndent, 0.3)
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'ddl_water_simulation')
+        ddl.onBound()
+        options = self.data['WATER_SIMULATION']['options']
+        ddl.addElements(list(enumerate(options)))
+        ddl.setSelectionByText(options[self.data['WATER_SIMULATION']['current']], True, silent=True)
+        ddl = soDropDownList2(GUI.Window(), width=280, height=24, VS='soGUI/visual_styles/options_DDL.xml', isOptions=True, colorFont=self.COLORFONT)
+        cmp = ddl.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'RIGHT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (ws - 114, 100 + 300 + self.vIndent, 0.3)
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'ddl_flora_density')
+        ddl.onBound()
+        options = self.data['FLORA_DENSITY']['options']
+        ddl.addElements(list(enumerate(options)))
+        ddl.setSelectionByText(options[self.data['FLORA_DENSITY']['current']], True, silent=True)
+        ddl = soDropDownList2(GUI.Window(), width=280, height=24, VS='soGUI/visual_styles/options_DDL.xml', isOptions=True, colorFont=self.COLORFONT)
+        cmp = ddl.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'RIGHT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (ws - 114, 100 + 330 + self.vIndent, 0.3)
+        self.component.rightWin.addVideoSettings.addChild(cmp, 'ddl_dynamic_shadow')
+        ddl.onBound()
+        if self.data.get('DYNAMIC_SHADOW'):
+            options = self.data['DYNAMIC_SHADOW']['options']
+            ddl.addElements(list(enumerate(options)))
+            ddl.setSelectionByText(options[self.data['DYNAMIC_SHADOW']['current']], True, silent=True)
+
+    def setupAudioFrame(self):
+        ws, hs = BigWorld.screenSize()
+        cmp = GUI.Frame2('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.colour = (255, 255, 255, 255)
+        cmp.materialFX = 'BLEND'
+        cmp.width = ws - 300 - 228
+        cmp.height = hs - 228
+        cmp.position = (414, 114, 0.9)
+        cmp.visible = 0
+        self.component.rightWin.addChild(cmp, 'audioSettings')
+        cmp = GUI.Text('soGUI/maps/Options/rightWindow.dds')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.position = (365, 141, 0.3)
+        cmp.text = lc('soOptionsGUI.soGUI.STRING_864_13')
+        self.component.rightWin.audioSettings.addChild(cmp, 'VolumeMusi\xd1\x81')
+        cmp = GUI.Simple('soGUI/maps/Options/_line.tga')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.colour = (255, 255, 255, 255)
+        cmp.materialFX = 'BLEND'
+        cmp.width = 672
+        cmp.height = 21
+        cmp.position = (365, 141, 1.0)
+        cmp.visible = 1
+        self.component.rightWin.audioSettings.addChild(cmp, 'line1')
+        slider = soSlider(GUI.Window(), width=383, height=8, steps=101, visualSteps=20, style='soGUI/visual_styles/settings_Slider.xml', default_settings_width=375)
+        cmp = slider.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (575, 136, 0.1)
+        slider.onValueChanged = self.onAudioSlidersMusik
+        slider.onBound()
+        self.component.rightWin.audioSettings.addChild(cmp, 'volumeMusicSlider')
+        slider.setLimits(0.0, 100.0)
+        edit = soEditField2(GUI.Window(), height=20, width=52)
+        edit.onBound()
+        cmp = edit.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (970, 130, 0.2)
+        self.component.rightWin.audioSettings.addChild(cmp, 'volumeMusicEdit')
+        cmp = GUI.Text('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.position = (365, 184, 0.3)
+        cmp.text = lc('soOptionsGUI.soGUI.STRING_908_13')
+        self.component.rightWin.audioSettings.addChild(cmp, 'VolumeEffects')
+        cmp = GUI.Simple('soGUI/maps/Options/_line.tga')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.colour = (255, 255, 255, 255)
+        cmp.materialFX = 'BLEND'
+        cmp.width = 672
+        cmp.height = 21
+        cmp.position = (429, 184, 0.3)
+        cmp.visible = 1
+        self.component.rightWin.audioSettings.addChild(cmp, 'line2')
+        slider = soSlider(GUI.Window(), width=383, height=8, steps=101, visualSteps=20, style='soGUI/visual_styles/settings_Slider.xml', default_settings_width=375)
+        cmp = slider.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (575, 180, 0.1)
+        slider.onBound()
+        slider.onValueChanged = self.onAudioSliderEffect
+        self.component.rightWin.audioSettings.addChild(cmp, 'volumeEffectSlider')
+        slider.setLimits(0.0, 100.0)
+        edit = soEditField2(GUI.Window(), height=20, width=52)
+        edit.onBound()
+        cmp = edit.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (970, 171, 0.2)
+        self.component.rightWin.audioSettings.addChild(cmp, 'volumeEffectEdit')
+        cmp = GUI.Text('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.position = (365, 234, 0.3)
+        cmp.text = lc('soOptionsGUI.soGUI.AllVolume')
+        self.component.rightWin.audioSettings.addChild(cmp, 'allVolume')
+        cmp = GUI.Simple('soGUI/maps/Options/_line.tga')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.colour = (255, 255, 255, 255)
+        cmp.materialFX = 'BLEND'
+        cmp.width = 672
+        cmp.height = 21
+        cmp.position = (429, 234, 0.3)
+        cmp.visible = 1
+        self.component.rightWin.audioSettings.addChild(cmp, 'line3')
+        slider = soSlider(GUI.Window(), width=383, height=8, steps=101, visualSteps=20, style='soGUI/visual_styles/settings_Slider.xml', default_settings_width=375)
+        cmp = slider.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (575, 230, 0.1)
+        slider.onBound()
+        slider.onValueChanged = self.onAudioSliderAllVolume
+        self.component.rightWin.audioSettings.addChild(cmp, 'AllVolumeSlider')
+        slider.setLimits(0.0, 100.0)
+        edit = soEditField2(GUI.Window(), height=20, width=52)
+        edit.onBound()
+        cmp = edit.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (970, 220, 0.2)
+        self.component.rightWin.audioSettings.addChild(cmp, 'AllVolumeEdit')
+
+    def setupControlFrame(self):
+        self.setupKeyboardFrame()
+        self.setupMouseFrame()
+
+    def setupKeyboardFrame(self):
+        ws, hs = BigWorld.screenSize()
+        vind = 114
+        cmp = GUI.Frame2('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.colour = (255, 255, 255, 255)
+        cmp.materialFX = 'BLEND'
+        cmp.width = ws - 300 - 228
+        cmp.height = hs - 228
+        cmp.position = (414, 75, 0.9)
+        cmp.visible = 0
+        self.component.rightWin.addChild(cmp, 'keyboardSettings')
+        rows = []
+        rows.append([(35, 'TOP'), {'action': {'props': soTableElemPropsStructure(dataStyles=self.keyTable_captionDS),
+                     'data': {'text': lc('soOptionsGUI.soGUI.STRING_604_131')}},
+          'key1': {'props': soTableElemPropsStructure(dataStyles=self.keyTable_captionDS),
+                   'data': {'text': lc('soOptionsGUI.soGUI.STRING_605_108')}},
+          'key2': {'props': soTableElemPropsStructure(dataStyles=self.keyTable_captionDS),
+                   'data': {'text': lc('soOptionsGUI.soGUI.STRING_606_108')}}}])
+        tbl = soTableComponent2(GUI.Window(), soTablePropsStructure(tableHeight=hs - 319, tableWidth=self.component.rightWin.keyboardSettings.width, outerBorderWidth=0, innerBorderWidth=0), isDefaultScrollBar='FALSE')
+        cmp = tbl.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (414, 75, 0.9)
+        self.component.rightWin.keyboardSettings.addChild(cmp, 'keyTable')
+        tbl.onBound()
+        widthColumn = (cmp.width - 30) / 3
+        tbl.addCols([['action', widthColumn + 30], ['key1', widthColumn], ['key2', widthColumn]])
+        tbl.addRows(rows)
+        btn = soButton(GUI.Window(), default_label_horizontal_anchor='CENTER', default_PositionMode='CLIP', isOptions=True, fontLabel='ruRU_calibri_large.font')
+        btn.initVSC('soGUI/visual_styles/settingsBtn.xml')
+        btn.fontColor = self.COLORFONT
+        btn.onBound()
+        cmp = btn.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'RIGHT'
+        cmp.verticalAnchor = 'BOTTOM'
+        cmp.textureName = ''
+        cmp.height = 30
+        cmp.width = 183
+        cmp.position = (ws - 110, hs - 200, 1)
+        cmp.colour = (255, 255, 255, 255)
+        cmp.visible = 1
+        cmp.materialFX = 'BLEND'
+        cmp.label.text = lc('soOptionsGUI.soGUI.STRING_636_19')
+        self.component.rightWin.keyboardSettings.addChild(cmp, 'DropToDefaultBtn')
+
+    def onAudioSliderAllVolume(self, step, val):
+        self.component.rightWin.audioSettings.AllVolumeEdit.script.setValue(str(val))
+        Settings().setAllVolume(val / 100.0)
+
+    @PyGUIEvent('rightWin.keyboardSettings.keyTable', 'onElementEvent')
+    def onKeyTableElem(self, col, row, event, data):
+        tbl = self.component.rightWin.keyboardSettings.keyTable.script
+        if row == 0:
+            return
+        if event == 'RIGHTMOUSE':
+            tbl.clearSelection()
+            tbl.selectRow(row)
+        elif event == 'LEFTMOUSE':
+            tbl.clearSelection()
+            tbl.selectRow(row)
+
+    @PyGUIEvent('rightWin.keyboardSettings.keyTable', 'onEditEvent')
+    def onKeyTableEdit(self, col, row, event, data):
+        tbl = self.component.rightWin.keyboardSettings.keyTable.script
+        if row == 0:
+            return
+        if event == 'BUTTON':
+            if BigWorld.time() - self.lastPressed <= BWPersonality.GUICore.mouseDoubleClickSpeed and self.lastRow == row:
+                self.OnDoubleClick(tbl, row)
+            self.lastPressed = BigWorld.time()
+            self.lastRow = row
+            tbl.clearSelection()
+            tbl.selectRow(row)
+
+    def OnDoubleClick(self, tbl, rowIndex):
+        OldRow = tbl.getRowByIndex(rowIndex)
+        color = (255, 255, 255, 255)
+        dataDS = self.keyTable_dataDS.copy()
+        dataDS['contentColor'] = dataDS['contentColorHover'] = dataDS['contentColorSelect'] = color
+        dataDSkey = dataDS.copy()
+        dataDSkey['font'] = 'ruRU_calibri_default.font'
+        NewRow = OldRow.copy()
+        row = [(25, 'MIDDLE'), {'action': {'props': soTableElemPropsStructure(dataStyles=dataDS),
+                     'data': OldRow['action']['data']},
+          'key1': {'props': soTableElemPropsStructure(dataStyles=dataDSkey),
+                   'data': {'text': u'\u043d\u0430\u0436\u043c\u0438\u0442\u0435 \u043a\u043b\u0430\u0432\u0438\u0448\u0443',
+                            'btnVS': OldRow['key1']['data']['btnVS']}},
+          'key2': {'props': soTableElemPropsStructure(dataStyles=dataDSkey, dataType=5),
+                   'data': OldRow['key2']['data']}}]
+        tbl.rewriteRow(rowIndex, row)
+        if row:
+            actionID = OldRow['action']['data']['action_id']
+        if actionID is not None:
+            self.showKeyBinder('', True, [actionID, 'key1'])
+        return
+
+    @PyGUIEvent('rightWin.keyboardSettings.DropToDefaultBtn', 'onClick', 0)
+    def onKeybindsBtns(self, btnN):
+        tbl = self.component.rightWin.keyboardSettings.keyTable.script
+        selection = tbl.getSelection()
+        row = None
+        if selection:
+            row = tbl.getRowByIndex(selection[0][1])
+        actionID = None
+        caption = u''
+        if row:
+            actionID = row['action']['data']['action_id']
+            caption = row['action']['data']['text']
+        if btnN == 0:
+            BWPersonality.GUICore.optionsEvent(self.EVENT_KEYBINDS_DEFAULT, None)
+            self.update()
+        elif btnN == 1:
+            if actionID is not None:
+                self.showKeyBinder(lc('soOptionsGUI.soGUI.STRING_1701_23') + caption + lc('soOptionsGUI.soGUI.STRING_1701_98'), True, [actionID, 'key1'])
+        return
+
+    def showKeyBinder(self, message = u'', doShow = True, action = None):
+        self.keyBindAction = action
+        if doShow:
+            BWPersonality.GUICore.registerKeyHook(self._keyHook)
+        else:
+            BWPersonality.GUICore.registerKeyHook(None)
+        return
+
+    def _keyHook(self, event):
+        if self.keyBindAction:
+            if event.key == KEY_ESCAPE:
+                self.showKeyBinder(doShow=False)
+                return True
+            if event.key in MODIFIER_CODES:
+                return True
+            keyCodes = (event.key,)
+            if event.isShiftDown():
+                keyCodes += (KEY_RSHIFT,)
+            if event.isCtrlDown():
+                keyCodes += (KEY_RCONTROL,)
+            if event.isAltDown():
+                keyCodes += (KEY_RALT,)
+            BWPersonality.GUICore.optionsEvent(self.EVENT_OPTIONSET, ['keybinds',
+             self.keyBindAction[0],
+             self.keyBindAction[1],
+             keyCodes])
+            self.update()
+        self.showKeyBinder(doShow=False)
+        return True
+
+    def setupMouseFrame(self):
+        ws, hs = BigWorld.screenSize()
+        cmp = GUI.Frame2('')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.colour = (255, 255, 255, 255)
+        cmp.materialFX = 'BLEND'
+        cmp.width = ws - 300 - 228
+        cmp.height = hs - 228
+        cmp.position = (414, 114, 0.9)
+        cmp.visible = 0
+        self.component.rightWin.addChild(cmp, 'mouseSettings')
+        cmp = GUI.Text('soGUI/maps/Options/rightWindow.dds')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.position = (350, 144, 0.3)
+        cmp.text = lc('soOptionsGUI.soGUI.STRING_733_13')
+        self.component.rightWin.mouseSettings.addChild(cmp, 'sensMouse')
+        slider = soSlider(GUI.Window(), width=383, height=8, steps=101, visualSteps=20, style='soGUI/visual_styles/settings_Slider.xml', default_settings_width=375)
+        cmp = slider.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (575, 140, 0.1)
+        slider.onValueChanged = self.onMouseSlider
+        slider.onBound()
+        self.component.rightWin.mouseSettings.addChild(cmp, 'sensMouseSlider')
+        slider.setLimits(0.0, 1.0)
+        edit = soEditField2(GUI.Window(), height=20, width=52)
+        edit.onBound()
+        cmp = edit.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.position = (970, 134, 0.2)
+        self.component.rightWin.mouseSettings.addChild(cmp, 'sensMouseEdit')
+        cmp = GUI.Text('soGUI/maps/Options/rightWindow.dds')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.font = 'ruRU_calibri_large.font'
+        cmp.colour = self.COLORFONT
+        cmp.materialFX = 'BLEND'
+        cmp.position = (350, 184, 0.3)
+        cmp.text = lc('soOptionsGUI.soGUI.STRING_774_73')
+        self.component.rightWin.mouseSettings.addChild(cmp, 'InvMouse')
+        cb = soCheckBox(GUI.Window(), default_style='soGUI/visual_styles/checkBoxSettings.xml')
+        cmp = cb.component
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'TOP'
+        cmp.colour = (255, 255, 255, 255)
+        cmp.materialFX = 'BLEND'
+        cmp.position = (560, 175, 0.1)
+        cb.onStateChange = self.onMouseInvertChange
+        self.component.rightWin.mouseSettings.addChild(cmp, 'mouseInvertCheckBox')
+        cb.onBound()
+        cmp = GUI.Simple('soGUI/maps/Options/_line.tga')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.colour = (255, 255, 255, 255)
+        cmp.materialFX = 'BLEND'
+        cmp.width = 965 - 350
+        cmp.height = 21
+        cmp.position = (350, 184, 0.3)
+        cmp.visible = 1
+        self.component.rightWin.mouseSettings.addChild(cmp, 'line1')
+        cmp = GUI.Simple('soGUI/maps/Options/_line.tga')
+        cmp.horizontalPositionMode = cmp.verticalPositionMode = 'PIXEL'
+        cmp.widthMode = cmp.heightMode = 'PIXEL'
+        cmp.horizontalAnchor = 'LEFT'
+        cmp.verticalAnchor = 'CENTER'
+        cmp.colour = (255, 255, 255, 255)
+        cmp.materialFX = 'BLEND'
+        cmp.width = 965 - 350
+        cmp.height = 21
+        cmp.position = (350, 144, 0.3)
+        cmp.visible = 1
+        self.component.rightWin.mouseSettings.addChild(cmp, 'line2')
+
+    def onMouseInvertChange(self):
+        BWPersonality.GUICore.optionsEvent(self.EVENT_OPTIONSET, ['mouse', 'invert', self.component.rightWin.mouseSettings.mouseInvertCheckBox.script.isChecked()])
+
+    def onSelectedElement(self, elemID):
+        self._sendEvent(3, ['video', 'screen_mode', elemID])
+
+    def ScreenRes_onSelectedElement(self, elemID):
+        self._sendEvent(3, ['video', 'resolution', elemID])
+        a, b = self.component.rightWin.mainVideoSettings.ddl_resolution.script.getSelection()
+        Settings().setAspectRatio(self.getRatioOfResolution(a))
+
+    def Quality_onSelectedElement(self, elemID):
+        self._sendEvent(3, ['video', 'quality', elemID])
+
+    def update(self):
+        data = BWPersonality.GUICore.optionsDataSection
+        if data is None:
+            return
+        else:
+            if data.has_key('audio'):
+                self._updateAudio(data['audio'])
+            if data.has_key('mouse'):
+                self._updateMouse(data['mouse'])
+            if data.has_key('resolution_list'):
+                self._updateResolutions(data['resolution_list'])
+            if data.has_key('screen_modes'):
+                self._updateScreenModes(data['screen_modes'])
+            if data.has_key('video'):
+                self._updateVideo(data['video'])
+            if data.has_key('keybinds'):
+                self._updateKeys(data['keybinds'])
+            return
+
+    def getRatioOfResolution(self, res):
+        resolutionList = Settings().getResolutionList()
+        for i in resolutionList:
+            if i['name'] == res:
+                return i['ratio']
+
+    def _updateResolutions(self, data):
+        ddl = self.component.rightWin.mainVideoSettings.ddl_resolution.script
+        ddl.clear()
+        ddl.addElements(data)
+
+    def getData(self):
+        data = {}
+        setList = filter(lambda x, sl = self.settings_list: x[0] in sl, BigWorld.graphicsSettings())
+        for setting in setList:
+            data[setting[0]] = {'name': setting[3],
+             'options': [ x[2] for x in setting[2] ],
+             'current': setting[1]}
+
+        if data.get('DYNAMIC_SHADOW') and data['DYNAMIC_SHADOW']['current'] == 0:
+            data['SHADOWS_QUALITY']['current'] = 3
+            data['SHADOWS_COUNT']['current'] = 7
+        return data
+
+    def _updateAudio(self, data):
+        self.component.rightWin.audioSettings.volumeMusicEdit.script.setValue(str(data['music']))
+        self.component.rightWin.audioSettings.volumeEffectEdit.script.setValue(str(data['sfx']))
+        self.component.rightWin.audioSettings.AllVolumeEdit.script.setValue(str(Settings().getAllVolume() * 100.0))
+        self.component.rightWin.audioSettings.volumeMusicSlider.script.setValue(data['music'], False)
+        self.component.rightWin.audioSettings.volumeEffectSlider.script.setValue(data['sfx'], False)
+        self.component.rightWin.audioSettings.AllVolumeSlider.script.setValue(Settings().getAllVolume() * 100)
+
+    def _updateMouse(self, data):
+        self.component.rightWin.mouseSettings.sensMouseEdit.script.setValue(str(data['sensivity']))
+        self.component.rightWin.mouseSettings.sensMouseSlider.script.setValue(data['sensivity'], False)
+        if data['invert']:
+            self.component.rightWin.mouseSettings.mouseInvertCheckBox.script.setActive()
+        else:
+            self.component.rightWin.mouseSettings.mouseInvertCheckBox.script.setInactive()
+
+    def _updateScreenModes(self, data):
+        ddl = self.component.rightWin.mainVideoSettings.ddl_screenMode.script
+        ddl.clear()
+        ddl.addElements(data)
+
+    def _updateVideo(self, data):
+        self.component.rightWin.mainVideoSettings.quality.script.setSelectionByText(self.VQ_LABELS[data['quality']], True, silent=True)
+        self.component.rightWin.mainVideoSettings.ddl_resolution.script.setSelectionByText(data['resolution'], True, silent=True)
+        self.component.rightWin.mainVideoSettings.ddl_screenMode.script.setSelectionByText(data['screen_mode'], True, silent=True)
+        if data['windowed']:
+            self.component.rightWin.mainVideoSettings.windowed.script.setActive()
+        else:
+            self.component.rightWin.mainVideoSettings.windowed.script.setInactive()
+
+    @PyGUIEvent('rightWin.mainVideoSettings.windowed', 'onStateChange')
+    def onWindowedCB(self):
+        state = self.component.rightWin.mainVideoSettings.windowed.script.isChecked()
+        self._sendEvent(self.EVENT_OPTIONSET, ['video', 'windowed', state])
+
+    def _updateKeys(self, data):
+        tbl = self.component.rightWin.keyboardSettings.keyTable.script
+        rows = []
+        rows.append([(25, 'TOP'), {'action': {'props': soTableElemPropsStructure(dataStyles=self.keyTable_captionDS),
+                     'data': {'text': lc('soOptionsGUI.soGUI.STRING_1532_131')}},
+          'key1': {'props': soTableElemPropsStructure(dataStyles=self.keyTable_captionDS),
+                   'data': {'text': lc('soOptionsGUI.soGUI.STRING_1533_108')}},
+          'key2': {'props': soTableElemPropsStructure(dataStyles=self.keyTable_captionDS),
+                   'data': {'text': lc('soOptionsGUI.soGUI.STRING_1534_108')}}}])
+        for index, action in enumerate(data):
+            dataDS = self.keyTable_dataDS
+            if action[4]:
+                dataDS = self.keyTable_dataDS2
+            rows.append([(25, 'MIDDLE'), {'action': {'props': soTableElemPropsStructure(dataStyles=dataDS),
+                         'data': {'text': action[3],
+                                  'action_id': action[0]}},
+              'key1': {'props': soTableElemPropsStructure(dataStyles=self.keyTable_dataDS, dataType=5),
+                       'data': {'text': action[1],
+                                'btnVS': 'soGUI/visual_styles/defaultBtnEmpty.xml'}},
+              'key2': {'props': soTableElemPropsStructure(dataStyles=self.keyTable_dataDS, dataType=5),
+                       'data': {'text': action[2],
+                                'btnVS': 'soGUI/visual_styles/defaultBtnEmpty.xml'}}}])
+
+        tbl.clearTable()
+        tbl.addRows(rows)
+
+    def onAudioSlidersMusik(self, step, val):
+        self.component.rightWin.audioSettings.volumeMusicEdit.script.setValue(str(val))
+        self._sendEvent(self.EVENT_OPTIONSET, ['audio', 'music', val])
+
+    def onAudioSliderEffect(self, step, val):
+        self.component.rightWin.audioSettings.volumeEffectEdit.script.setValue(str(val))
+        self._sendEvent(self.EVENT_OPTIONSET, ['audio', 'sfx', val])
+
+    def onMouseSlider(self, step, val):
+        self.component.rightWin.mouseSettings.sensMouseEdit.script.setValue(str(val))
+        BWPersonality.GUICore.optionsEvent(self.EVENT_OPTIONSET, ['mouse', 'sensivity', val])
+
+    def hideVideoSettings(self):
+        self.component.leftWnd.addVideoBtn.visible = False
+        self.component.leftWnd.mainVideoBtn.visible = False
+        self.component.leftWnd.audioBtn.position = (self.mainIndent, self.TopVerticalIndent + self.height + self.VerticalIndentBetweenButton, 0.1)
+        self.component.leftWnd.controlBtn.position = (self.mainIndent, self.TopVerticalIndent + self.height * 2 + self.VerticalIndentBetweenButton * 2, 1)
+        self.component.leftWnd.MouseBtn.position = (self.AddIndent, self.TopVerticalIndent + self.height * 3 + self.VerticalIndentBetweenButton * 2, 1)
+        self.component.leftWnd.keyboardBtn.position = (self.AddIndent, self.TopVerticalIndent + self.height * 4 + self.VerticalIndentBetweenButton * 2, 1)
+
+    def showVideoSettings(self):
+        self.component.leftWnd.addVideoBtn.visible = True
+        self.component.leftWnd.mainVideoBtn.visible = True
+        self.component.leftWnd.audioBtn.position = (self.mainIndent, self.TopVerticalIndent + self.height * 3 + self.VerticalIndentBetweenButton * 2, 0.1)
+        self.component.leftWnd.controlBtn.position = (self.mainIndent, self.TopVerticalIndent + self.height * 4 + self.VerticalIndentBetweenButton * 2, 0.1)
+        self.component.leftWnd.MouseBtn.position = (self.AddIndent, self.TopVerticalIndent + self.height * 5 + self.VerticalIndentBetweenButton * 2, 0.1)
+        self.component.leftWnd.keyboardBtn.position = (self.AddIndent, self.TopVerticalIndent + self.height * 6 + self.VerticalIndentBetweenButton * 2, 0.1)
+
+    def hideControlSettings(self):
+        self.component.leftWnd.MouseBtn.visible = 0
+        self.component.leftWnd.keyboardBtn.visible = 0
+
+    def showControlSettings(self):
+        self.component.leftWnd.MouseBtn.visible = 1
+        self.component.leftWnd.keyboardBtn.visible = 1
+
+    def onCancelBtn(self):
+        self._sendEvent(self.EVENT_CANCEL, None)
+        self.hide()
+        return
+
+    def onApplyBtn(self):
+        self.applySettings()
+        self._sendEvent(self.EVENT_APPLY, None)
+        return
+
+    def applySettings(self):
+        if self.component.rightWin.addVideoSettings.visible == True:
+            data = {}
+            data['TEXTURE_QUALITY'] = self.component.rightWin.addVideoSettings.ddl_texture_quality.script.getSelection()[1]
+            data['TEXTURE_FILTERING'] = self.component.rightWin.addVideoSettings.ddl_smoothing.script.getSelection()[1]
+            data['SPEEDTREE_QUALITY'] = self.component.rightWin.addVideoSettings.ddl_speedtree_quality.script.getSelection()[1]
+            data['WATER_QUALITY'] = self.component.rightWin.addVideoSettings.ddl_water_quality.script.getSelection()[1]
+            data['SSAO'] = self.component.rightWin.addVideoSettings.SSAO.script.getSelection()[1]
+            data['FAR_PLANE'] = self.component.rightWin.addVideoSettings.ddl_far_plane.script.getSelection()[1]
+            data['WATER_SIMULATION'] = self.component.rightWin.addVideoSettings.ddl_water_simulation.script.getSelection()[1]
+            data['FOOT_PRINTS'] = self.component.rightWin.addVideoSettings.ddl_foot_prints.script.getSelection()[1]
+            data['god rays'] = self.component.rightWin.addVideoSettings.ddl_god_rays.script.getSelection()[1]
+            data['FLORA_DENSITY'] = self.component.rightWin.addVideoSettings.ddl_flora_density.script.getSelection()[1]
+            data['DYNAMIC_SHADOW'] = self.component.rightWin.addVideoSettings.ddl_dynamic_shadow.script.getSelection()[1]
+            BWPersonality.GUICore.optionsGUI.setCustomPreset()
+            self._sendEvent(self.EVENT_APPLY_SETTINGS, data)
+        else:
+            self._sendEvent(2, None)
+        return
+
+    def _sendEvent(self, event, data):
+        BWPersonality.GUICore.optionsEvent(event, data)
+
+    def setCustomPreset(self):
+        self.component.rightWin.mainVideoSettings.quality.script.setSelectionByValue(self.VIDEO_QUALITY_CUSTOM, silent=False)
+
+    def onvideoBtn(self):
+        if self.component.leftWnd.addVideoBtn.visible == True:
+            self.hideVideoSettings()
+        else:
+            self.showVideoSettings()
+
+    def onControlBtn(self):
+        if self.component.leftWnd.MouseBtn.visible == True:
+            self.hideControlSettings()
+        else:
+            self.showControlSettings()
+
+    def onAudioBtn(self):
+        self.allFrameHide()
+        self.component.rightWin.audioSettings.visible = 1
+
+    def onMouseBtn(self):
+        self.allFrameHide()
+        self.update()
+        self.component.rightWin.mouseSettings.visible = 1
+
+    def onKeyboardBtn(self):
+        self.allFrameHide()
+        self.component.rightWin.keyboardSettings.visible = 1
+
+    def onMainVideoBtn(self):
+        self.allFrameHide()
+        self.component.rightWin.mainVideoSettings.visible = 1
+
+    def onAddVideoSettings(self):
+        self.allFrameHide()
+        self.component.rightWin.addVideoSettings.visible = 1
+
+    def doReposition(self):
+        sw, sh = BigWorld.screenSize()
+        self.component.width = sw
+        self.component.height = sh
+        self.component.leftWnd.height = sh
+        self.component.verticalWhiteLine.height = sh
+        self.component.rightWin.width = sw - 300
+        self.component.rightWin.height = sh
+        self.component.rightWin.applyBtn.position = (sw - 114, sh - 115, 1)
+        self.component.rightWin.cancelBtn.position = (sw - 114, sh - 76, 1)
+        self.component.leftWnd.backBtn.position = (148, sh - 76, 1)
+        self.component.rightWin.mainVideoSettings.width = sw - 300 - 228
+        self.component.rightWin.mainVideoSettings.height = sh - 228
+        self.component.rightWin.mainVideoSettings.ddl_resolution.position.x = sw - 114
+        self.component.rightWin.mainVideoSettings.quality.position.x = sw - 114
+        self.component.rightWin.mainVideoSettings.ddl_screenMode.position.x = sw - 114
+        self.component.rightWin.mainVideoSettings.windowed.position.x = sw - 114 - 280
+        self.component.rightWin.addVideoSettings.width = sw - 300 - 228
+        self.component.rightWin.addVideoSettings.height = sh - 228
+        self.component.rightWin.addVideoSettings.ddl_texture_quality.position.x = sw - 114
+        self.component.rightWin.addVideoSettings.ddl_water_quality.position.x = sw - 114
+        self.component.rightWin.addVideoSettings.ddl_dynamic_shadow.position.x = sw - 114
+        self.component.rightWin.addVideoSettings.SSAO.position.x = sw - 114
+        self.component.rightWin.addVideoSettings.ddl_foot_prints.position.x = sw - 114
+        self.component.rightWin.addVideoSettings.ddl_smoothing.position.x = sw - 114
+        self.component.rightWin.addVideoSettings.ddl_far_plane.position.x = sw - 114
+        self.component.rightWin.addVideoSettings.ddl_god_rays.position.x = sw - 114
+        self.component.rightWin.addVideoSettings.ddl_speedtree_quality.position.x = sw - 114
+        self.component.rightWin.addVideoSettings.ddl_water_simulation.position.x = sw - 114
+        self.component.rightWin.addVideoSettings.ddl_flora_density.position.x = sw - 114
+        self.component.rightWin.audioSettings.width = sw - 300 - 228
+        self.component.rightWin.audioSettings.height = sh - 228
+        self.component.rightWin.keyboardSettings.width = sw - 300 - 228
+        self.component.rightWin.keyboardSettings.height = sh - 228
+        self.component.rightWin.keyboardSettings.DropToDefaultBtn.position = (sw - 350, sh - 200, 1)
+        self.component.rightWin.mouseSettings.width = sw - 300 - 228
+        self.component.rightWin.mouseSettings.height = sh - 228
+        for name, child in self.component.rightWin.mainVideoSettings.children:
+            if name.startswith('line'):
+                child.width = sw - 300 - 114 - 15 - 114
+
+        for name, child in self.component.rightWin.addVideoSettings.children:
+            if name.startswith('line'):
+                child.width = sw - 300 - 114 - 15 - 114
+
+    def allFrameHide(self):
+        self.component.rightWin.mainVideoSettings.quality.script.showList(doShow=False)
+        self.component.rightWin.mainVideoSettings.ddl_resolution.script.showList(doShow=False)
+        self.component.rightWin.mainVideoSettings.quality.script.showList(doShow=False)
+        self.component.rightWin.mainVideoSettings.ddl_screenMode.script.showList(doShow=False)
+        self.component.rightWin.addVideoSettings.ddl_texture_quality.script.showList(doShow=False)
+        self.component.rightWin.addVideoSettings.ddl_water_quality.script.showList(doShow=False)
+        self.component.rightWin.addVideoSettings.ddl_dynamic_shadow.script.showList(doShow=False)
+        self.component.rightWin.addVideoSettings.SSAO.script.showList(doShow=False)
+        self.component.rightWin.addVideoSettings.ddl_foot_prints.script.showList(doShow=False)
+        self.component.rightWin.addVideoSettings.ddl_smoothing.script.showList(doShow=False)
+        self.component.rightWin.addVideoSettings.ddl_far_plane.script.showList(doShow=False)
+        self.component.rightWin.addVideoSettings.ddl_god_rays.script.showList(doShow=False)
+        self.component.rightWin.addVideoSettings.ddl_speedtree_quality.script.showList(doShow=False)
+        self.component.rightWin.addVideoSettings.ddl_water_simulation.script.showList(doShow=False)
+        self.component.rightWin.addVideoSettings.ddl_flora_density.script.showList(doShow=False)
+        self.component.rightWin.mouseSettings.visible = 0
+        self.component.rightWin.keyboardSettings.visible = 0
+        self.component.rightWin.mainVideoSettings.visible = 0
+        self.component.rightWin.addVideoSettings.visible = 0
+        self.component.rightWin.audioSettings.visible = 0
+
+    def onBackBtn(self):
+        if self.callback is not None:
+            self.callback()
+        self.hide()
+        return
+
+    def show(self, inGame = False, callback = None):
+        self.inGame = inGame
+        self.callback = callback
+        if self.component.parent is None:
+            BWPersonality.GUICore.generalLayer.addChild(self.component, 'options')
+        self.update()
+        self.allFrameHide()
+        self.component.visible = True
+        self.onvideoBtn()
+        self.onMainVideoBtn()
+        BWPersonality.GUICore.setBestCursor()
+        return
+
+    def hide(self):
+        self.component.visible = 0
+        BWPersonality.GUICore.setBestCursor()

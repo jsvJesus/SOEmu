@@ -1,0 +1,202 @@
+# Embedded file name: scripts/client/StalkerModel.py
+import ItemsUtils
+from Items import ItemsCatalog
+import BigWorld
+
+class STALKER_PART:
+    HEAD, SHIRT, HANDS, PANTS, BOOTS = xrange(0, 5)
+    ARMOR = 5
+    HAT, MASK, BACKPACK = xrange(6, 9)
+
+
+class STALKER_HP:
+    HEAD = 'HP_head'
+    BACKPACK = 'HP_backpack'
+    BACKPACK_NOARMOR = 'HP_backpack_noarmor'
+
+
+class STALKER_MODEL:
+    BASE = 'characters/avatars/basem.model'
+    REQUIRED = {STALKER_PART.HEAD: [['characters/avatars/heads/head_m1.model']],
+     STALKER_PART.SHIRT: [['characters/avatars/body/body_pilot.model'], ['characters/avatars/body/body_haki.model', STALKER_PART.HAT]],
+     STALKER_PART.HANDS: [['characters/avatars/hands/hand_koja.model']],
+     STALKER_PART.PANTS: [['characters/avatars/legs/legs_djinsy.model'], ['characters/avatars/legs/legs_haki.model']],
+     STALKER_PART.BOOTS: [['characters/avatars/boots/boots_bertsi.model']]}
+    OPTIONAL = {STALKER_PART.ARMOR: [['characters/avatars/mod-armor/armor_ninja.model'], ['characters/avatars/mod-armor/armor_kaiser.model']]}
+    ATTACHING = {STALKER_PART.BACKPACK: [['characters/avatars/mod-back/backpack_m1.model'], ['characters/avatars/mod-back/backpack_sakvoyaj80.model']],
+     STALKER_PART.MASK: [['characters/avatars/mod-mask/mask1.model', STALKER_PART.HAT], ['characters/avatars/mod-mask/mask2.model'], ['characters/avatars/mod-mask/mask_jaba.model']],
+     STALKER_PART.HAT: [['characters/avatars/mod-cap/cap1.model']]}
+    DEAFAULT_MODELS = {ItemsCatalog.HEAD: REQUIRED[STALKER_PART.HEAD][0][0],
+     ItemsCatalog.SHIRT: REQUIRED[STALKER_PART.SHIRT][0][0],
+     ItemsCatalog.HANDS: REQUIRED[STALKER_PART.HANDS][0][0],
+     ItemsCatalog.PANTS: REQUIRED[STALKER_PART.PANTS][0][0],
+     ItemsCatalog.BOOTS: REQUIRED[STALKER_PART.BOOTS][0][0],
+     ItemsCatalog.ARMOR: None}
+
+
+def default():
+    supermodel = [STALKER_MODEL.BASE]
+    for part_model in STALKER_MODEL.REQUIRED.values():
+        supermodel.append(part_model[0][0])
+
+    return supermodel
+
+
+def getItemTints(item_type, param = None):
+    if param is None:
+        param = ItemsCatalog.GetItemParam(item_type)
+    if param:
+        if param.has_key('Tint'):
+            return param['Tint']
+    return {}
+
+
+def set_model_due_to_inventory(avatar, default_models):
+    model_tints_dict = {}
+    head_tints_dict = {}
+    backback_tints_dict = {}
+    weapon_back_tints_dict = {}
+    weapon_pistol_tints_dict = {}
+    list_added_to_model_items = [0]
+    supermodel = [STALKER_MODEL.BASE]
+    head_attachments = []
+    hiding_model_parts = set()
+    for model_part in ItemsCatalog.head_mode_attr_dict.keys():
+        if avatar.ActiveArmorSet[ItemsCatalog.head_mode_attr_dict[model_part][0]] > 0:
+            item_type = avatar.ActiveArmorSet[ItemsCatalog.head_mode_attr_dict[model_part][1]]
+            item_param = ItemsCatalog.GetItemParam(item_type)
+            hiding_model_parts.update(item_param.get('HideAttachesAt', item_param.get('ArmorType', [])))
+
+    for model_part in ItemsCatalog.base_model_attr_dict.keys():
+        if avatar.ActiveArmorSet[ItemsCatalog.base_model_attr_dict[model_part][0]] not in list_added_to_model_items:
+            item_type = avatar.ActiveArmorSet[ItemsCatalog.base_model_attr_dict[model_part][1]]
+        elif avatar.ActiveArmorSet[ItemsCatalog.base_model_attr_dict[model_part][0]] == 0:
+            item_type = default_models.get(model_part)
+            if item_type is None:
+                continue
+            if isinstance(item_type, dict):
+                model = item_type.get('model', '')
+                tint = item_type.get('tint', {})
+                if model:
+                    supermodel.append(model)
+                if tint:
+                    model_tints_dict.update(tint)
+                attachments = item_type.get('attachments', [])
+                for attach in attachments:
+                    attach_part_type = attach.get('att_type')
+                    if attach_part_type is not None:
+                        if attach_part_type in hiding_model_parts:
+                            continue
+                    model = attach.get('model', '')
+                    tint = attach.get('tint', {})
+                    if model:
+                        head_attachments.append(model)
+                    if tint:
+                        head_tints_dict.update(tint)
+
+                continue
+        model = ItemsUtils.getModelNameByItemType(item_type)
+        tint = getItemTints(item_type)
+        if model:
+            list_added_to_model_items.append(avatar.ActiveArmorSet[ItemsCatalog.base_model_attr_dict[model_part][0]])
+            supermodel.append(model)
+        if tint:
+            model_tints_dict.update(tint)
+
+    for model_part in ItemsCatalog.head_mode_attr_dict.keys():
+        if avatar.ActiveArmorSet[ItemsCatalog.head_mode_attr_dict[model_part][0]] not in list_added_to_model_items:
+            item_type = avatar.ActiveArmorSet[ItemsCatalog.head_mode_attr_dict[model_part][1]]
+            item_param = ItemsCatalog.GetItemParam(item_type)
+            model = ItemsUtils.getModelNameByItemType(item_type, item_param)
+            tint = getItemTints(item_type, item_param)
+            hiding_model_parts.update(item_param.get('HideAttachesAt', item_param.get('ArmorType', [])))
+            if model:
+                list_added_to_model_items.append(avatar.ActiveArmorSet[ItemsCatalog.head_mode_attr_dict[model_part][0]])
+                head_attachments.append(model)
+            if tint:
+                head_tints_dict.update(tint)
+
+    back_pack_attachments = []
+    if avatar.ActiveArmorSet['BackPackID'] not in list_added_to_model_items:
+        item_type = avatar.ActiveArmorSet['BackPackType']
+        model = ItemsUtils.getModelNameByItemType(item_type)
+        tint = getItemTints(item_type)
+        if model:
+            list_added_to_model_items.append(avatar.ActiveArmorSet['BackPackID'])
+            back_pack_attachments.append(model)
+        if tint:
+            backback_tints_dict.update(tint)
+    weapon_back_attachments = {}
+    if avatar.ActiveWeaponSet['PrimarySlotID']:
+        if avatar.ActiveWeaponSet['PrimarySlotID'] != avatar.ActiveItemID:
+            model = avatar.GetEquippedItemModels(ItemsCatalog.PRIMARY)
+            if model:
+                list_added_to_model_items.append(avatar.ActiveWeaponSet['PrimarySlotID'])
+                weapon_back_attachments = model
+    weapon_pistol_attachments = {}
+    if avatar.ActiveWeaponSet['SecondarySlotID']:
+        if avatar.ActiveWeaponSet['SecondarySlotID'] != avatar.ActiveItemID:
+            model = avatar.GetEquippedItemModels(ItemsCatalog.SECONDARY)
+            if model:
+                list_added_to_model_items.append(avatar.ActiveWeaponSet['SecondarySlotID'])
+                weapon_pistol_attachments = model
+    return (supermodel,
+     head_attachments,
+     back_pack_attachments,
+     weapon_back_attachments,
+     weapon_pistol_attachments,
+     model_tints_dict,
+     head_tints_dict,
+     backback_tints_dict)
+
+
+def baseNPC():
+    supermodel = [STALKER_MODEL.BASE]
+    for part_model in STALKER_MODEL.REQUIRED.values():
+        supermodel.append(part_model[0][0])
+
+    for part_model in STALKER_MODEL.OPTIONAL.values():
+        supermodel.append(part_model[0][0])
+
+    return supermodel
+
+
+def ComposePlayerModel(player):
+    model_set, head_attachments, back_pack_attachments, weapon_back_attachments, weapon_pistol_attachments, model_tints_dict, head_tints_dict, backback_tints_dict = set_model_due_to_inventory(player, player.getDefaultModels())
+    model = ComposeAvatarBodyModel(model_set, model_tints_dict, back_pack_attachments, backback_tints_dict, head_attachments, head_tints_dict, player.hasArmor())
+    if weapon_back_attachments:
+        weapon_model = player.getModelByNamesDict(weapon_back_attachments)
+        weapon_model.origin('HP_weaponback')
+        model.weaponback = weapon_model
+    if weapon_pistol_attachments:
+        weapon_model = player.getModelByNamesDict(weapon_pistol_attachments)
+        model.Pistol = weapon_model
+    if hasattr(player, 'onPreModelChange'):
+        player.onPreModelChange()
+    return model
+
+
+def ComposeAvatarBodyModel(core_model_set, core_model_tints_dict, back_pack_attachments, backback_tints_dict, head_attachments, head_tints_dict, hasArmor):
+    model = BigWorld.Model(*core_model_set)
+    for model_tint in core_model_tints_dict:
+        setattr(model, model_tint, core_model_tints_dict[model_tint])
+
+    if back_pack_attachments:
+        model_backpack = BigWorld.Model(*back_pack_attachments)
+        for backback_tints in backback_tints_dict:
+            setattr(model_backpack, backback_tints, backback_tints_dict[backback_tints])
+
+        if hasArmor:
+            model.backpack = model_backpack
+        else:
+            model.backpack_noarmor = model_backpack
+    if head_attachments:
+        try:
+            model.head = BigWorld.Model(*head_attachments)
+            for head_tint in head_tints_dict:
+                setattr(model.head, head_tint, head_tints_dict[head_tint])
+
+        except ValueError as ex:
+            print ex, head_attachments
+
+    return model

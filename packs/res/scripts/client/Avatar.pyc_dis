@@ -1,0 +1,1680 @@
+# Embedded file name: scripts/client/Avatar.py
+from functools import partial
+import random
+import math
+from Localization import lc
+import BigWorld
+import Math
+from Math import Vector3, Matrix
+import Pixie
+import ResMgr
+from AvatarCommon import AvatarCommon
+from Config.Damage import BODY_ZONES
+from gui_const import MESSAGEBOX
+import BWPersonality
+import AnimationCaps
+import gui_jokes
+from AvatarItemHolder import AvatarItemHolder
+from CallbackHelpers import callback
+from ItemHolder import ItemHolder
+from Helpers import ChatConsole
+import GUI
+import datetime
+from time import time
+from Victim import Victim
+import StalkerModel
+from Damager import Damager
+import heads
+from math_bw import is_point_in_cylinder, distance_from_point_to_line
+import particles
+import SFXer
+from Character import Character
+import Helpers.Listener as Listener
+from Helpers.Caps import CAP_CAN_TRADE, CAP_CAN_EXCHANGE
+from Items import ItemsCatalog
+from Mailable import Mailable
+from FiringDefs import FiringDefs
+from CharacterUtils import CharacterConst
+import Fractions
+from Quester import Quester
+from Animations import Animations
+import ItemsUtils
+from MapNotes import MapNotes
+from Effects import Effects
+from Teleportable import Teleportable
+from GroupMember import GroupMember
+from Thrower import Thrower
+from Characteristics import Characteristics
+import Stats
+from CorruptedPacks import CorruptedPacks
+from Bleeding import Bleeding
+from client_utils import get_action_frame_rate, execute_model_action
+import Respawn
+import traceback
+from math_bw import rotate_by_yaw_pitch
+from FootPrinter import FootPrinter
+import json
+import codecs
+
+class Avatar(BigWorld.Entity, AvatarCommon, Victim, Damager, AvatarItemHolder, Mailable, Character, Listener.Listenable, GroupMember, Quester, Effects, Teleportable, Characteristics, Thrower, CorruptedPacks, Bleeding, FootPrinter):
+
+    def __init__(self):
+        BigWorld.Entity.__init__(self)
+        if CAP_CAN_EXCHANGE not in self.targetCaps:
+            self.targetCaps += [CAP_CAN_EXCHANGE]
+        AvatarItemHolder.Initialize(self)
+        Mailable.__init__(self)
+        self.bboxData = []
+        self.enable_pitch = False
+        self.deathDrawn = True
+        self.grenadeArmed = False
+        Listener.Listenable.__init__(self)
+        Quester.__init__(self)
+        GroupMember.__init__(self)
+        Effects.__init__(self)
+        Thrower.__init__(self)
+        self.showNameCallbacker = None
+        self.hideNameCallbacker = None
+        self.kickbackValue = 0.0
+        self.kickBackTimer = None
+        self.deadCallback = None
+        self._isBurn = None
+        self._isBurn_smoke = None
+        self._last_hips = None
+        self._hd_end_burn_smoke = None
+        self.item_id = 1
+        self._particles_burn = None
+        self._particles_burn_smoke = None
+        self.friendsList = []
+        self.pvppkstat = []
+        Characteristics.__init__(self)
+        return
+
+    def setscale(self, arg):
+        if hasattr(self, 'model'):
+            self.model.scale = (2.0, 2.0, 2.0)
+
+    def getPvPPKstat(self):
+        pass
+
+    def setPvpPkStat(self, data):
+        pass
+
+    def newFriendsList(self, friendList):
+        pass
+
+    def newBlackList(self, blackList):
+        pass
+
+    def updateFriendList(self, friendName, status):
+        pass
+
+    def getTargetForFriendlyAction(self, friendName):
+        pass
+
+    def showRequestToFriend(self, friendName):
+        pass
+
+    def playerLogOff(self):
+        pass
+
+    def friendStatusChanged(self, friendName, status):
+        pass
+
+    def getFriendList(self):
+        pass
+
+    def getFriendIdxByName(self, friendName):
+        pass
+
+    def MsgError(self, msg):
+        pass
+
+    def inviteFriendToClan(self, name):
+        pass
+
+    def addFriend(self, friendName):
+        pass
+
+    def startTrade(self):
+        pass
+
+    def onAddedFriend(self, friendName, online):
+        pass
+
+    def onAddedBlackList(self, name):
+        pass
+
+    def delFromBlackList(self, name):
+        pass
+
+    def delFriend(self, friendName):
+        pass
+
+    def listFriends(self):
+        pass
+
+    def msgFriend(self, friendName, message):
+        pass
+
+    def onReceiveMessageFromFriend(self, admirerName, message):
+        pass
+
+    def pong(self):
+        pass
+
+    def setCap(self, cap_name):
+        AnimationCaps.setCap(self.model, cap_name, True)
+
+    def removeCap(self, cap_name):
+        AnimationCaps.setCap(self.model, cap_name, False)
+
+    def getFractionRelationship(self, fractionID):
+        for relation in self.relationsWithFractions:
+            if relation['fractionID'] == fractionID:
+                return relation['status']
+
+        return Fractions.PlayerStatusDefault.get(fractionID, 0)
+
+    def worldLoadReact(self):
+        if self.worldLoad == 0:
+            if self.model is not None:
+                self.model.visible = False
+        elif self.model is not None:
+            self.model.visible = True
+        return
+
+    def set_worldLoad(self, v):
+        self.worldLoadReact()
+
+    def set_BulletinBoardData(self, old):
+        pass
+
+    def add_collider(self):
+        Victim.add_collider(self)
+
+        def rv3(val):
+            a, b, c = val
+            rand = random.randrange(-0.01, 0.01, int=float)
+            return (rand + a, rand + b, rand + c)
+
+        zones = [('head',
+          'HP_head',
+          BODY_ZONES.HEAD,
+          (-0.05, -0.07, -0.1),
+          (0.2, 0.07, 0.07)),
+         ('HP_spine1',
+          'HP_spine1',
+          BODY_ZONES.TORSO,
+          (-0.02, -0.16, -0.12),
+          (0.21, 0.16, 0.12)),
+         ('hips',
+          'hips',
+          BODY_ZONES.TORSO,
+          (-0.17, -0.08, -0.12),
+          (0.17, 0.3, 0.12)),
+         ('leftarm',
+          'leftarm',
+          BODY_ZONES.ARM,
+          (-0.04, -0.07, -0.05),
+          (0.25, 0.07, 0.04)),
+         ('leftforearm',
+          'leftforearm',
+          BODY_ZONES.FOREARM,
+          (-0.02, -0.06, -0.06),
+          (0.32, 0.06, 0.03)),
+         ('rightarm',
+          'rightarm',
+          BODY_ZONES.ARM,
+          (-0.04, -0.05, -0.06),
+          (0.25, 0.08, 0.06)),
+         ('rightforearm',
+          'rightforearm',
+          BODY_ZONES.FOREARM,
+          (-0.02, -0.07, -0.03),
+          (0.32, 0.05, 0.05)),
+         ('leftupleg',
+          'leftupleg',
+          BODY_ZONES.LEG_UPPER,
+          (0.0, -0.07, -0.1),
+          (0.4, 0.07, 0.07)),
+         ('rightupleg',
+          'rightupleg',
+          BODY_ZONES.LEG_UPPER,
+          (0.0, -0.07, -0.1),
+          (0.4, 0.07, 0.07)),
+         ('leftleg',
+          'leftleg',
+          BODY_ZONES.LEG_LOWER,
+          (-0.05, -0.07, 0.0),
+          (0.3, 0.07, 0.07)),
+         ('rightleg',
+          'rightleg',
+          BODY_ZONES.LEG_LOWER,
+          (-0.05, -0.07, 0.0),
+          (0.3, 0.07, 0.07))]
+        for x in zones:
+            self.attach_collider_box(x[0], x[1], x[2], rv3(x[3]), rv3(x[4]))
+
+    def spawn_new_item(self, TypeID):
+        item_params = ItemsCatalog.GetItemParam(TypeID)
+        if not item_params:
+            return
+        if ItemsCatalog.GetItemClass(TypeID) in [ItemsCatalog.LOOT, ItemsCatalog.BUFF, ItemsCatalog.ARTIFACT]:
+            return
+        new_item = ItemsUtils.CreateComplexItem(self.item_id, TypeID, item_params['InconstantPropertiesKeys'], item_params['InconstantPropertiesValues'], 0)
+        if item_params.get('MaxCondition'):
+            param = ItemsUtils.GetComplexItemInconstanParams(new_item)
+            param[ItemsCatalog.INC_CONDITION_VALUE] = item_params['MaxCondition']
+            ItemsUtils.SetComplexItemInconstanParams(new_item, param)
+        self.CarryingItems.append(new_item)
+        self.item_id += 1
+
+    def prerequisites(self):
+        self.item_id = ItemsCatalog.MAX_ITEM_NUMBER + 1
+        playersdata = BWPersonality.game.playersdata
+        if not hasattr(self, 'CarryingItems'):
+            self.CarryingItems = []
+        self.spawn_new_item(ItemsCatalog.GLASSES_KOBRA_MASK['TypeID'])
+        self.spawn_new_item(ItemsCatalog.BERET_HAT_RED['TypeID'])
+        self.spawn_new_item(ItemsCatalog.DRAGOON_ARMOR['TypeID'])
+        self.spawn_new_item(ItemsCatalog.HARVAT_PANTS['TypeID'])
+        self.spawn_new_item(ItemsCatalog.HARVAT_SHIRT['TypeID'])
+        self.spawn_new_item(ItemsCatalog.ARMY_BACKPACK['TypeID'])
+        self.spawn_new_item(ItemsCatalog.BERTCI_M1_BOOTS['TypeID'])
+        self.spawn_new_item(ItemsCatalog.GLOCK_18_PISTOL['TypeID'])
+        self.spawn_new_item(ItemsCatalog.AMMO_9x19_AP['TypeID'])
+        self.spawn_new_item(ItemsCatalog.AMMO_9x19_AP['TypeID'])
+        self.spawn_new_item(ItemsCatalog.AMMO_9x19_AP['TypeID'])
+        self.spawn_new_item(ItemsCatalog.SIG_751_ASSAULT_RIFLE['TypeID'])
+        self.spawn_new_item(ItemsCatalog.SNIPER1_NATO_SCOPE['TypeID'])
+        self.spawn_new_item(ItemsCatalog.FLASH2_NATO_LIGHT['TypeID'])
+        self.spawn_new_item(ItemsCatalog.ASSAULT_7_SILENCER['TypeID'])
+        self.spawn_new_item(ItemsCatalog.AMMO_762x51_FMJ['TypeID'])
+        self.spawn_new_item(ItemsCatalog.AMMO_762x51_FMJ['TypeID'])
+        self.spawn_new_item(ItemsCatalog.AMMO_762x51_FMJ['TypeID'])
+        self.spawn_new_item(ItemsCatalog.VSS_SNIPER_RIFLE['TypeID'])
+        self.spawn_new_item(ItemsCatalog.AMMO_9x39_AP_SP6['TypeID'])
+        self.spawn_new_item(ItemsCatalog.AMMO_9x39_AP_SP6['TypeID'])
+        self.spawn_new_item(ItemsCatalog.AMMO_9x39_AP_SP6['TypeID'])
+        self.spawn_new_item(ItemsCatalog.PSO1_USSR_SCOPE['TypeID'])
+        self.spawn_new_item(ItemsCatalog.WEAPON_USSR_LIGHT['TypeID'])
+        self.spawn_new_item(ItemsCatalog.VAL_MAGAZINE['TypeID'])
+        player_name = self.name
+        if player_name != u'' and playersdata.get(player_name):
+            player_name_print = self.name
+            print 'prerequisites: ' + player_name_print.encode('utf-8')
+            if playersdata[player_name].get('ActiveItemID'):
+                self.ActiveItemID = playersdata[player_name]['ActiveItemID']
+            if playersdata[player_name].get('ActiveItemType'):
+                self.ActiveItemType = playersdata[player_name]['ActiveItemType']
+            for paramname, idx in self.ActiveArmorSet.items():
+                if playersdata[player_name].get('ActiveArmorSet'):
+                    self.ActiveArmorSet[paramname] = playersdata[player_name]['ActiveArmorSet'][paramname]
+
+            for paramname, idx in self.ActiveWeaponSet.items():
+                if playersdata[player_name].get('ActiveWeaponSet'):
+                    self.ActiveWeaponSet[paramname] = playersdata[player_name]['ActiveWeaponSet'][paramname]
+
+            for paramname, idx in self.PrimaryWeaponUpgrades.items():
+                if playersdata[player_name].get('PrimaryWeaponUpgrades'):
+                    self.PrimaryWeaponUpgrades[paramname] = playersdata[player_name]['PrimaryWeaponUpgrades'][paramname]
+
+            for paramname, idx in self.SecondaryWeaponUpgrades.items():
+                if playersdata[player_name].get('SecondaryWeaponUpgrades'):
+                    self.SecondaryWeaponUpgrades[paramname] = playersdata[player_name]['SecondaryWeaponUpgrades'][paramname]
+
+            for paramname, idx in self.ActiveGadjetSet.items():
+                if playersdata[player_name].get('ActiveGadjetSet'):
+                    self.ActiveGadjetSet[paramname] = playersdata[player_name]['ActiveGadjetSet'][paramname]
+
+        model_set, head_attachments, back_pack_attachments, weapon_back_attachments, weapon_pistol_attachments, model_tints_dict, head_tints_dict, backback_tints_dict = StalkerModel.set_model_due_to_inventory(self, self.getDefaultModels())
+        res = []
+        for ex in (model_set, head_attachments, back_pack_attachments):
+            for e in ex:
+                if e is not None:
+                    res.append(e)
+
+        active_item_models = self.GetEquippedItemModels(ItemsCatalog.ACTIVE)
+        for model_collection in (weapon_back_attachments, weapon_pistol_attachments, active_item_models):
+            if model_collection:
+                for model_list in model_collection.values():
+                    if model_list[ItemsUtils.MODEL_LIST_POSITION]:
+                        res.append(model_list[ItemsUtils.MODEL_LIST_POSITION])
+
+        try:
+            for paramname, idx in self.PrimaryWeaponUpgrades.items():
+                attachitem = ItemsUtils.GetComplexItemByType(self, idx)
+                motherItem = ItemsUtils.GetComplexItemByID(self, self.ActiveWeaponSet['PrimarySlotID'])
+                if attachitem and motherItem:
+                    ItemsUtils.AttachItem(self, motherItem, attachitem)
+
+            for paramname, idx in self.SecondaryWeaponUpgrades.items():
+                attachitem = ItemsUtils.GetComplexItemByType(self, idx)
+                motherItem = ItemsUtils.GetComplexItemByID(self, self.ActiveWeaponSet['PrimarySlotID'])
+                if attachitem and motherItem:
+                    ItemsUtils.AttachItem(self, motherItem, attachitem)
+
+        except:
+            pass
+
+        return res
+
+    def onEnterWorld(self, pre = None):
+        self.filter = BigWorld.AvatarFilter()
+        self.SetAvatarModel()
+        BigWorld.addShadowEntity(self)
+        self.EnableModelPitch()
+        if hasattr(self, 'worldLoad'):
+            self.worldLoadReact()
+        BigWorld.player().avatarOnEnterWorld(self)
+        self.model.yaw = self.yaw
+
+    def onDestroyModel(self):
+        self.ClearWeaponLightsAttachments()
+
+    def setupFlashlight(self):
+        lt = BigWorld.PyChunkSpotLight()
+        lt.colour = (255, 255, 255, 0)
+        lt.innerRadius = 50
+        lt.outerRadius = 100
+        lt.cosConeAngle = 0.98
+        lt.specular = 1
+        lt.diffuse = 1
+        lt.visible = False
+        self.avatarFlashlight = lt
+
+    def SetAvatarGun(self):
+        self.autogunModel = self.getModelByNamesDict(self.GetEquippedItemModels(ItemsCatalog.ACTIVE))
+        self.hp_barrel_node = self.autogunModel.node('HP_barrel') if self.autogunModel else None
+        self.model.effectorright = self.autogunModel
+        self.UpdateAvatarAnimationCaps()
+        return
+
+    def UpdateAvatarAnimationCaps(self):
+        caps_list = self.getAvatarAnimationCaps()
+        AnimationCaps.setCapsList(self.model, caps_list)
+
+    def getEquippedItemType(self):
+        return ItemsUtils.GetEquippedItemType(self)
+
+    def getAvatarAnimationCaps(self):
+        equippedItemType = self.getEquippedItemType()
+        if equippedItemType in [ItemsCatalog.PISTOL, ItemsCatalog.REVOLVER]:
+            caps_list = []
+        elif equippedItemType in [ItemsCatalog.ASSAULT_RIFLE,
+         ItemsCatalog.SNIPER_RIFLE,
+         ItemsCatalog.SHOTGUN,
+         ItemsCatalog.MACHINE_GUN,
+         ItemsCatalog.SUB_MACHINE_GUN,
+         ItemsCatalog.RIFLE,
+         ItemsCatalog.GRENADE_LAUNCHER,
+         ItemsCatalog.ROCKET_LAUNCHER]:
+            caps_list = ['AutogunArmed']
+        else:
+            caps_list = ['Unarmed']
+        if self.crouching:
+            caps_list.append('Crouching')
+        if self.dead:
+            caps_list.append('Dead')
+        return caps_list
+
+    def UpdateCrouch(self):
+        self.UpdateAvatarAnimationCaps()
+
+    def InitSpotLight(self):
+        self.onSwitchSpotLight(self.flashLightLit)
+
+    def SetAvatarModel(self):
+        self.onDestroyModel()
+        self.model = StalkerModel.ComposePlayerModel(self)
+        self.SetAvatarGun()
+        if self.sit_id != 0:
+            self.SitGround(self.sit_id, False, True, False)
+        else:
+            self.model.IdleForever()
+        self.add_collider()
+        if self.flashLightLit:
+            callback(partial(PlayerAvatar.InitSpotLight, self, False), 0.5)
+        self.dustSource = particles.attachDustSource(self.model)
+        self.onAvatarModelChanged()
+        self.UpdateModelPitch()
+        self.apllyBleedDrop()
+        self.createFootTriger()
+        try:
+            self._updataBurn()
+        except Exception as e:
+            print 'SetAvatarModel::_updataBurn error'
+            traceback.print_exc()
+
+        BigWorld.player().onAvatarModelChangedForPlayer(self)
+
+    def restartClient(self):
+        if not getattr(BigWorld, 'restarting', False):
+            BigWorld.restartGame()
+            BigWorld.restarting = True
+
+    def onFalling(self, isFalling):
+        if isFalling:
+            pass
+        else:
+            SFXer.JumpEndEffect(self)
+
+    def onAvatarModelChanged(self):
+        if self.model is not None:
+            self.model.motors[0].fallNotifier = self.onFalling
+        return
+
+    def EnableModelPitch(self, enable = True):
+        self.enable_pitch = enable
+        if not hasattr(self, 'pitchNotifier'):
+            return
+        if not self.pitchNotifier:
+            self.pitchNotifier = self.UpdateModelPitch
+        if enable:
+            self.UpdateModelPitch()
+
+    def GetPitchActionName(self, recoil = False):
+        pitch_action_name = 'Pitch'
+        equippedItemType = ItemsUtils.GetEquippedItemGrip(self)
+        GRIP_CATALOG = {ItemsCatalog.ASSAULT_RIFLE_GRIP_HIGHFAR: 'Autogun_highFar',
+         ItemsCatalog.ASSAULT_RIFLE_GRIP_HIGHMEDIUM: 'Autogun_highMedium',
+         ItemsCatalog.ASSAULT_RIFLE_GRIP_HIGHNEAR: 'Autogun_highNear',
+         ItemsCatalog.ASSAULT_RIFLE_GRIP_LOWFAR: 'Autogun_lowFar',
+         ItemsCatalog.ASSAULT_RIFLE_GRIP_LOWMEDIUM: 'Autogun_lowMedium',
+         ItemsCatalog.ASSAULT_RIFLE_GRIP_LOWNEAR: 'Autogun_lowNear',
+         ItemsCatalog.ASSAULT_RIFLE_GRIP_MAGFAR: 'Autogun_magFar',
+         ItemsCatalog.ASSAULT_RIFLE_GRIP_MAGMEDIUM: 'Autogun_magMedium',
+         ItemsCatalog.ASSAULT_RIFLE_GRIP_MAGNEAR: 'Autogun_magNear',
+         ItemsCatalog.ASSAULT_RIFLE_GRIP_MAGPISTOL: 'Autogun_magPistol',
+         ItemsCatalog.ASSAULT_RIFLE_GRIP_LAUMEDIUM: 'Autogun_lauMedium'}
+        if self.grenadeArmed:
+            pitch_action_name += 'GrenadeArmed'
+        elif equippedItemType == ItemsCatalog.PISTOL_GRIP:
+            pitch_action_name += 'Pistol'
+            if self.sniping:
+                pitch_action_name += 'Aim'
+        elif equippedItemType == ItemsCatalog.ASSAULT_RIFLE_GRIP:
+            pitch_action_name += 'Autogun'
+            if self.sniping:
+                pitch_action_name += 'Aim'
+        elif equippedItemType in GRIP_CATALOG:
+            pitch_action_name += GRIP_CATALOG[equippedItemType]
+            if self.sniping:
+                pitch_action_name += 'Aim'
+        elif equippedItemType == ItemsCatalog.SHOTGUN_GRIP:
+            pitch_action_name += 'Shotgun'
+            if self.sniping:
+                pitch_action_name += 'Aim'
+        elif equippedItemType == ItemsCatalog.ROCKET_LAUNCHER_GRIP:
+            pitch_action_name += 'Launcher'
+        else:
+            if equippedItemType == ItemsCatalog.NONE_TYPE:
+                return None
+            print '\t Wrong pitch state!'
+            raise Exception('Wrong pitch state!') or AssertionError
+        if recoil:
+            pitch_action_name += 'Recoil'
+        return pitch_action_name
+
+    def UpdateSinipng(self):
+        self.UpdateModelPitch()
+        SFXer.ChangeStanceEffect(self)
+
+    def DoPitchAction(self, recoil = False):
+        try:
+            if self.enable_pitch:
+                pitch_action_name = self.GetPitchActionName(recoil)
+                if pitch_action_name:
+                    pitch_action = self.model.action(pitch_action_name)
+                    kicked_pitch = self.pitch - self.kickbackValue
+                    safe_pitch = (max(-1, min(-kicked_pitch / FiringDefs.PITCH_BORDER_VALUE, 1)) + 1) / 2
+                    frameCount = pitch_action.lastFrame - pitch_action.firstFrame
+                    pitch_frame = int(safe_pitch * frameCount) + pitch_action.firstFrame
+                    pitch_action(0, None, 0, pitch_frame, pitch_frame)
+        except Exception as e:
+            print 'Avatar::DoPitchAction():', str(e)
+
+        return
+
+    def UpdateModelPitch(self):
+        self.DoPitchAction()
+
+    def CalcRecoilvalue(self, acc_value, base_accuracy, AccStandMods):
+        return float(base_accuracy * self.GetFiringStandAccuracyMod(AccStandMods) * abs(acc_value) / FiringDefs.ACCURACY_PERCENT_MOD)
+
+    def GetRecoilValueParams(self):
+        return (ItemHolder.GetActiveWeaponAccuracyDiff(self)[0], ItemHolder.GetFiryingItemParams(self))
+
+    def GetRecoilValue(self, fire_or_cooldown = False):
+        accuracy_diff, fire_params = self.GetRecoilValueParams()
+        accuracy_recoil = accuracy_diff[2]
+        kickback = accuracy_diff[1]
+        accuracy_border = accuracy_diff[0]
+        accuracy = fire_params[0]
+        acc_stand_mods = fire_params[6]
+        if fire_or_cooldown:
+            return self.CalcRecoilvalue(accuracy_recoil, accuracy, acc_stand_mods) / 2.0
+        else:
+            return (self.CalcRecoilvalue(kickback, accuracy, acc_stand_mods) / 2.0, self.CalcRecoilvalue(accuracy_border, accuracy, acc_stand_mods) / 2.0)
+
+    def FireRecoil(self):
+
+        def updateKickback():
+            self.kickbackValue -= self.GetRecoilValue(True)
+            if self.kickbackValue < 0:
+                self.kickbackValue = 0
+                if self.kickBackTimer:
+                    BigWorld.cancelCallback(self.kickBackTimer)
+                self.kickBackTimer = None
+                self.UpdateModelPitch()
+            else:
+                self.UpdateModelPitch()
+                self.kickBackTimer = BigWorld.callback(FiringDefs.KICKBACK_UPDATE_RATE, updateKickback)
+            return
+
+        if self.enable_pitch:
+            kicback_add, max_kicback_value = self.GetRecoilValue()
+            self.kickbackValue += kicback_add
+            if self.kickbackValue > max_kicback_value:
+                self.kickbackValue = max_kicback_value
+            self.DoPitchAction(recoil=True)
+            if not self.kickBackTimer:
+                self.kickBackTimer = BigWorld.callback(FiringDefs.KICKBACK_UPDATE_RATE, updateKickback)
+
+    def onLeaveWorld(self):
+        pf = codecs.open('playersdata.json', 'w', 'utf-8')
+        try:
+            playersdata = BWPersonality.game.playersdata
+            player_name = self.name
+            if player_name not in playersdata:
+                playersdata[player_name] = {}
+            if not playersdata[player_name].get('space_name'):
+                playersdata[player_name].update({'space_name': BWPersonality.game.get_space_name(self.spaceID)})
+            else:
+                playersdata[player_name]['space_name'] = BWPersonality.game.get_space_name(self.spaceID)
+            if not playersdata[player_name].get('position'):
+                playersdata[player_name].update({'position': list(self.position)})
+            else:
+                playersdata[player_name]['position'] = list(self.position)
+            if not playersdata[player_name].get('direction'):
+                playersdata[player_name].update({'direction': list(BigWorld.camera().direction)})
+            else:
+                playersdata[player_name]['direction'] = list(BigWorld.camera().direction)
+            if not playersdata[player_name].get('yaw'):
+                playersdata[player_name].update({'yaw': self.yaw})
+            else:
+                playersdata[player_name]['yaw'] = self.yaw
+            if not playersdata[player_name].get('pitch'):
+                playersdata[player_name].update({'pitch': self.pitch})
+            else:
+                playersdata[player_name]['pitch'] = self.pitch
+            if not playersdata[player_name].get('ActiveItemID'):
+                playersdata[player_name].update({'ActiveItemID': self.ActiveItemID})
+            else:
+                playersdata[player_name]['ActiveItemID'] = self.ActiveItemID
+            if not playersdata[player_name].get('ActiveItemType'):
+                playersdata[player_name].update({'ActiveItemType': self.ActiveItemType})
+            else:
+                playersdata[player_name]['ActiveItemType'] = self.ActiveItemType
+            for paramname, idx in self.ActiveArmorSet.items():
+                if not playersdata[player_name].get('ActiveArmorSet'):
+                    playersdata[player_name].update({'ActiveArmorSet': {paramname: idx}})
+                else:
+                    playersdata[player_name]['ActiveArmorSet'][paramname] = idx
+
+            for paramname, idx in self.ActiveWeaponSet.items():
+                if not playersdata[player_name].get('ActiveWeaponSet'):
+                    playersdata[player_name].update({'ActiveWeaponSet': {paramname: idx}})
+                else:
+                    playersdata[player_name]['ActiveWeaponSet'][paramname] = idx
+
+            for paramname, idx in self.PrimaryWeaponUpgrades.items():
+                if not playersdata[player_name].get('PrimaryWeaponUpgrades'):
+                    playersdata[player_name].update({'PrimaryWeaponUpgrades': {paramname: idx}})
+                else:
+                    playersdata[player_name]['PrimaryWeaponUpgrades'][paramname] = idx
+
+            for paramname, idx in self.SecondaryWeaponUpgrades.items():
+                if not playersdata[player_name].get('SecondaryWeaponUpgrades'):
+                    playersdata[player_name].update({'SecondaryWeaponUpgrades': {paramname: idx}})
+                else:
+                    playersdata[player_name]['SecondaryWeaponUpgrades'][paramname] = idx
+
+            for paramname, idx in self.ActiveGadjetSet.items():
+                if not playersdata[player_name].get('ActiveGadjetSet'):
+                    playersdata[player_name].update({'ActiveGadjetSet': {paramname: idx}})
+                else:
+                    playersdata[player_name]['ActiveGadjetSet'][paramname] = idx
+
+            json.dump(playersdata, pf, sort_keys=False, ensure_ascii=False, indent=4)
+        except:
+            traceback.print_exc()
+
+        pf.close()
+        BigWorld.delShadowEntity(self)
+        if hasattr(self, 'nameBoxAtch'):
+            self.model.root.detach(self.nameBoxAtch)
+        if self.showNameCallbacker is not None:
+            BigWorld.cancelCallback(self.showNameCallbacker)
+        if self.hideNameCallbacker is not None:
+            BigWorld.cancelCallback(self.hideNameCallbacker)
+        self.nameBoxAtch = None
+        self.nameBox = None
+        self.clanBox = None
+        BigWorld.player().cancelPongChecker()
+        BigWorld.player().cancelPinger()
+        BigWorld.player().avatarLeaveWorld(self.id)
+        self.deleteFootTriger()
+        self.model = None
+        return
+
+    def set_sniping(self, old):
+        self.UpdateModelPitch()
+
+    def DrawThrow(self, duration, velocity):
+        """Effects and actions for grenade throwing. """
+        self.EnableModelPitch(False)
+        self.model.effectorright = None
+
+        def returnModelToDefault():
+            self.EnableModelPitch(True)
+            if hasattr(self, 'autogunModel'):
+                self.model.effectorright = self.autogunModel
+
+        throw_direction = Math.Vector3(velocity)
+        throw_direction.normalise()
+        new_yaw = math.acos(throw_direction[2])
+        if throw_direction[0] < 0:
+            new_yaw *= -1
+        self.model.yaw = new_yaw
+        execute_model_action(self.model.GrenadeFireEnd, duration, returnModelToDefault)
+        return
+
+    def updateGrenadePath(self, serverPos, destPos):
+        pass
+
+    def getFiringPoint(self):
+        if self.model.visible:
+            return Matrix(self.hp_barrel_node).translation
+        else:
+            if self.crouching:
+                spine_y = 0.64
+            else:
+                spine_y = 1.24
+            if self.sniping:
+                xshift = 0.1
+                yshift = 0.4
+            else:
+                xshift = 0.2
+                yshift = 0.1
+            avg_gun_length = 0.9
+            return self.position + (0, spine_y, 0) + rotate_by_yaw_pitch((xshift, yshift, avg_gun_length), self.yaw, self.pitch)
+
+    def nextSingleShot(self):
+        self.nextSingleShotTimer = None
+        if self.doNextSingleShot:
+            self.singleShot()
+        return
+
+    def traceBullet(self, src, vector):
+        hitPoint = None
+        hitPointDistSqr = vector.length ** 2
+        valid_impact_threshold = 0.01
+        hitKind = Avatar.traceBullet.HitKindNone
+        hitParams = {'fireVector': vector}
+        col = BigWorld.collide(self.spaceID, src, src + vector)
+        if col:
+            pointWC, triWC, mat_id = col
+            distToCollisionSqr = src.distSqrTo(pointWC)
+            if distToCollisionSqr < hitPointDistSqr:
+                hitPoint = pointWC
+                hitPointDistSqr = distToCollisionSqr
+                hitKind = Avatar.traceBullet.HitKindWorld
+                hitParams.update({'triangle': triWC,
+                 'material': mat_id})
+        victims = []
+        for e in BigWorld.entities.values():
+            if isinstance(e, Victim) and e != self and e.position.distSqrTo(src) <= hitPointDistSqr + 1.0:
+                victims.append(e)
+
+        for victim in victims:
+            if victim.is_dead():
+                continue
+            if not hasattr(victim, 'skeletonCollider'):
+                continue
+            direction = Vector3(vector)
+            direction.normalise()
+            if victim.skeletonCollider.doCollide(src, direction):
+                victim.on_death([])
+                p = victim.skeletonCollider.impactPoint
+                if math.isnan(p[0]) or p[0] <= -1e+308:
+                    continue
+                if not is_point_in_cylinder(p, src, direction, valid_impact_threshold):
+                    continue
+                box = victim.skeletonCollider.impactCollider
+                collider_max_size = max((box.maxBounds[i] - box.minBounds[i] for i in xrange(3)))
+                nodename, node = victim.collider_nodes[box.name]
+                node_pos = Matrix(node).translation
+                if p.distTo(node_pos) > 2 * collider_max_size:
+                    continue
+                distToVictimSqr = p.distSqrTo(src)
+                if distToVictimSqr >= hitPointDistSqr:
+                    continue
+                hitPoint = p
+                hitPointDistSqr = distToVictimSqr
+                hitKind = Avatar.traceBullet.HitKindVictim
+                hitParams.update({'entity': victim,
+                 'reflection': Vector3(victim.skeletonCollider.impactReflection),
+                 'bodyZone': victim.colliderNames[victim.skeletonCollider.impactCollider.name]})
+
+        hitParams['hitKind'] = hitKind
+        hitParams['hitPoint'] = hitPoint
+        return hitParams
+
+    traceBullet.HitKindNone = None
+    traceBullet.HitKindVictim = 1
+    traceBullet.HitKindWorld = 2
+
+    def startBurst(self):
+        params = ItemHolder.GetFiryingItemParams(self)
+        total_accuracy, fireRange, bulletCount, fireSpeed, magic_bullet, fire_type, accuracy_mods = params
+        timePerShot = 1.0 / fireSpeed
+        ammo_capacity = ItemsUtils.GetWeaponAmmoCapacity(self, ItemsCatalog.GetItemParam(self.ActiveItemType))
+        max_burst_time = ammo_capacity * timePerShot + 5.0
+        callback(self.burstFire, 0, interval=timePerShot, cancel_existing=True)
+        callback(self.endBurst, max_burst_time, cancel_existing=True, id='Avatar.onAmmoIsOver')
+
+    def endBurst(self):
+        callback.cancel(self.burstFire)
+        callback.cancel(self.endBurst)
+
+    def burstFire(self):
+        self.fire()
+
+    def getNormalFiringOffset(self):
+        return abs(random.gauss(0, 0.4))
+
+    def fireRocket(self, owner = None):
+        pass
+
+    def fireRocketM202(self, owner = None):
+        pass
+
+    def fire(self, src = None, fireVector = None, firingParams = None, draw_impacts = True, bulletTracesStorage = []):
+        if not src:
+            src = self.getFiringPoint()
+        if not firingParams:
+            firingParams = ItemHolder.GetFiryingItemParams(self)
+        if not firingParams:
+            return
+        else:
+            accuracy, range, numShots, rateOfFire, sfxParam, fire_type, accuracy_mods = firingParams
+            if not fireVector:
+                fireVector = rotate_by_yaw_pitch((0, 0, range), self.yaw, self.pitch)
+            bulletTraces = []
+            for i in xrange(numShots):
+                randRoll = 2 * math.pi * random.random()
+                max_diff = accuracy * 0.5
+                diff = self.getNormalFiringOffset()
+                randYawDiff = math.asin(math.cos(randRoll) * math.sin(diff * max_diff))
+                randPitchDiff = math.asin(math.sin(randRoll) * math.sin(diff * max_diff))
+                bulletVector = rotate_by_yaw_pitch((0, 0, fireVector.length), fireVector.yaw + randYawDiff, fireVector.pitch + randPitchDiff)
+                trace = self.traceBullet(src, bulletVector)
+                bulletTraces.append(trace)
+
+            if bulletTracesStorage is not None:
+                bulletTracesStorage.extend(bulletTraces)
+            SFXer.GunFire(self, sfxParam)
+            if self.model.visible:
+                SFXer.ShellLaunch(self, ItemsUtils.MODE_FIRE)
+            self.FireRecoil()
+            self.AnimateFire(fire_type, 1.0 / rateOfFire)
+            victims = []
+            if draw_impacts:
+                dmg = self.SimpleGetFiryingItemDamage()
+                penetration = dmg['penetration']
+                p_dmg_type, p_dmg_value = dmg['mainDamage'].items()[0]
+                for trace in bulletTraces:
+                    hitKind = trace['hitKind']
+                    hitPoint = trace['hitPoint']
+                    watercollide = self.drawWaterFire(src, hitPoint)
+                    if hitKind == self.traceBullet.HitKindVictim:
+                        e = trace['entity']
+                        reflection = trace['reflection']
+                        if e.canTakeDamage:
+                            vector = trace['fireVector']
+                            bodyZone = trace['bodyZone']
+                            victims.append(dict(entity=e.id, bodyZone=bodyZone, position=e.position))
+                            if e and hasattr(e, 'pre_bleed'):
+                                e.pre_bleed(hitPoint, bodyZone)
+                        else:
+                            SFXer.ArmorNotBroken(hitPoint, e, reflection)
+                    elif hitKind == self.traceBullet.HitKindWorld and not watercollide:
+                        SFXer.Ricochet(self, src, hitPoint, trace['triangle'], trace['material'])
+
+            return victims
+
+    def AnimateFire(self, fire_type, animate_time):
+        ANIMATION_DELAY = 0.0
+        if fire_type == ItemsCatalog.PUMP_ACTION_SHOTGUN:
+            FRAME_PUMPING = 30
+            reload_action = self.model.ReloadShotgunQuit
+            action_framerate = get_action_frame_rate(self.model.ReloadBreechBegin, animate_time)
+            BigWorld.callback(ANIMATION_DELAY + FRAME_PUMPING / action_framerate, partial(self.ThrowShells, 1))
+            self.StartSFXSeries(get_action_frame_rate(reload_action, animate_time), [partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_shotgun_pump.xml')], [12])
+        else:
+            return
+        self.EnableModelPitch(False)
+        execute_model_action(reload_action, animate_time, self.onAnimateFireEnd)
+
+    def onAnimateFireEnd(self):
+        self.EnableModelPitch(True)
+
+    def updateHealth(self):
+        pass
+
+    def set_health(self, v):
+        self.updateHealth()
+
+    def set_healthMax(self, v):
+        self.updateHealth()
+
+    def on_death(self, source_data):
+        Victim.on_death(self, source_data)
+        self.drawDeath()
+        SFXer.DeathEffect(self)
+
+    def on_revive(self):
+        print 'on_revive'
+        Victim.on_revive(self)
+        AnimationCaps.setCap(self.model, 'Dead', False)
+        self.model.Die.stop()
+        if self.deadCallback:
+            BigWorld.cancelCallback(self.deadCallback)
+            self.deadCallback = None
+        if hasattr(self, 'respawn_msgbox_id') and self.respawn_msgbox_id:
+            BWPersonality.GUICore.closeMessageBox(self.respawn_msgbox_id)
+        if hasattr(self, 'askIDteamNo') and self.askIDteamNo:
+            BWPersonality.GUICore.closeMessageBox(self.askIDteamNo)
+            self.askIDteamNo = None
+        return
+
+    def on_damaged(self, source_data, damagetaken_data):
+        Victim.on_damaged(self, source_data, damagetaken_data)
+        self.bleed_on_damage(source_data, damagetaken_data)
+
+    def drawDeath(self):
+        self.deathDrawn = False
+
+        def __onDeathDrawn():
+            self.deadCallback = None
+            self.deathDrawn = True
+            AnimationCaps.setCap(self.model, 'Dead')
+            return
+
+        self.model.Die()
+        self.deadCallback = BigWorld.callback(1.2, __onDeathDrawn)
+
+    def DrawItemPutOn(self, duration, equippingItemType, unequippingItemType):
+        if ItemsCatalog.GetItemClass(equippingItemType) == ItemsCatalog.WEAPON and ItemsCatalog.GetItemClass(unequippingItemType) == ItemsCatalog.WEAPON:
+            self.DrawUnequipItem(unequippingItemType, equippingItemType, duration / 2.0, duration / 2.0)
+        else:
+            self.SetAvatarModel()
+
+    def DrawItemPutOnStep2(self, duration):
+        action = self.model.BackpackTakeIn
+        execute_model_action(action, duration / 2.0, self.DrawItemPutOnEnd)
+
+    def DrawItemPutOnEnd(self):
+        self.SetAvatarModel()
+        self.EnableModelPitch(True)
+
+    def ThrowShells(self, num):
+        if self.model.visible:
+            for index in xrange(num):
+                SFXer.ShellLaunch(self, ItemsUtils.MODE_RELOAD)
+
+    def BreechReloadStart(self, reload_time, num_ammo_to_load):
+        FRAME_SHELLS_GETTED = 30
+        default_all_time_length = self.model.ReloadBreechBegin.duration + self.model.ReloadBreechLoad.duration * num_ammo_to_load + self.model.ReloadBreechQuit.duration
+        time_mod = default_all_time_length / reload_time
+        begin_duration = self.model.ReloadBreechBegin.duration / time_mod
+        load_duration = self.model.ReloadBreechLoad.duration / time_mod
+        eng_duration = self.model.ReloadBreechQuit.duration / time_mod
+        reload_action = self.model.ReloadBreechBegin
+        gun_reload_action = self.model.effectorright.ReloadBegin
+        action_framerate = get_action_frame_rate(self.model.ReloadBreechBegin, begin_duration)
+        execute_model_action(gun_reload_action, begin_duration)
+        execute_model_action(reload_action, begin_duration, partial(self.DoBreechReload, load_duration, eng_duration, num_ammo_to_load))
+        BigWorld.callback(FRAME_SHELLS_GETTED / action_framerate, partial(self.ThrowShells, num_ammo_to_load))
+        self.StartSFXSeries(get_action_frame_rate(reload_action, begin_duration), [partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_doublebarelled_broke.xml')], [21])
+
+    def DoBreechReload(self, reload_time, end_reload_time, num_ammo_to_load):
+        num_ammo_to_load -= 1
+        reload_action = self.model.ReloadBreechLoad
+        gun_reload_action = self.model.effectorright.ReloadLoad
+        execute_model_action(gun_reload_action, reload_time)
+        if num_ammo_to_load > 0:
+            execute_model_action(reload_action, reload_time, partial(self.DoBreechReload, reload_time, end_reload_time, num_ammo_to_load))
+        else:
+            execute_model_action(reload_action, reload_time, partial(self.EndBrechReload, end_reload_time))
+        self.StartSFXSeries(get_action_frame_rate(reload_action, reload_time), [partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_doublebarelled_insert.xml')], [14])
+
+    def EndBrechReload(self, reload_time):
+        reload_action = self.model.ReloadBreechQuit
+        gun_reload_action = self.model.effectorright.ReloadQuit
+        execute_model_action(gun_reload_action, reload_time)
+        execute_model_action(reload_action, reload_time, self.onReloadAnimationEnd)
+        self.StartSFXSeries(get_action_frame_rate(reload_action, reload_time), [partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_doublebarelled_close.xml')], [9])
+
+    def ManualReloadStart(self, reload_time, num_ammo_to_load, is_short_reload):
+        default_all_time_length = self.model.ReloadShotgunBegin.duration + self.model.ReloadShotgunLoad.duration * num_ammo_to_load
+        if not is_short_reload:
+            default_all_time_length += self.model.ReloadShotgunQuit.duration
+        time_mod = default_all_time_length / reload_time
+        begin_duration = self.model.ReloadShotgunBegin.duration / time_mod
+        load_duration = self.model.ReloadShotgunLoad.duration / time_mod
+        eng_duration = self.model.ReloadShotgunQuit.duration / time_mod
+        reload_action = self.model.ReloadShotgunBegin
+        execute_model_action(reload_action, begin_duration, partial(self.DoManualReload, load_duration, eng_duration, num_ammo_to_load, is_short_reload))
+        self.StartSFXSeries(get_action_frame_rate(reload_action, begin_duration), [partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_shotgun_lower.xml')], [1])
+
+    def DoManualReload(self, reload_time, end_reload_time, num_ammo_to_load, is_short_reload):
+        num_ammo_to_load -= 1
+        reload_action = self.model.ReloadShotgunLoad
+        if num_ammo_to_load > 0:
+            execute_model_action(reload_action, reload_time, partial(self.DoManualReload, reload_time, end_reload_time, num_ammo_to_load, is_short_reload))
+        else:
+            execute_model_action(reload_action, reload_time, partial(self.EndManualReload, end_reload_time, is_short_reload))
+        self.StartSFXSeries(get_action_frame_rate(reload_action, reload_time), [partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_shotgun_insert.xml')], [9])
+
+    def EndManualReload(self, reload_time, is_short_reload):
+        if not is_short_reload:
+            reload_action = self.model.ReloadShotgunQuit
+            execute_model_action(reload_action, reload_time, self.onReloadAnimationEnd)
+            self.StartSFXSeries(get_action_frame_rate(reload_action, reload_time), [partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_shotgun_pump.xml')], [12])
+            return
+        self.onReloadAnimationEnd()
+
+    def StartSFXSeries(self, framerate, sfxes, frames):
+        if len(sfxes) != len(frames):
+            return
+        for index, frame in enumerate(frames):
+            BigWorld.callback(frame / framerate, sfxes[index])
+
+    def reload(self, reload_type, time_to_reload, num_added_ammo):
+        self.EnableModelPitch(False)
+        if reload_type == ItemsUtils.RELOAD_AUTOGUN or reload_type == ItemsUtils.RELOAD_MACHINEGUN_BELT or reload_type == ItemsUtils.RELOAD_BULLPUP_BIG_MAGAZINE:
+            reload_action = self.model.ReloadAutogun
+            frames = [19, 53, 69]
+            frame_actions = [partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_autogun_clipoff.xml'), partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_autogun_clipin.xml'), partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_autogun_slide.xml')]
+        elif reload_type == ItemsUtils.RELOAD_AUTOGUN_SHORT:
+            frames = [17, 49]
+            frame_actions = [partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_autogun_clipoff.xml'), partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_autogun_clipin.xml')]
+            reload_action = self.model.ReloadAutogunShort
+        elif reload_type == ItemsUtils.RELOAD_PISTOL:
+            frames = [4, 37, 52]
+            frame_actions = [partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_pistol_clipoff.xml'), partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_pistol_clipin.xml'), partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_pistol_slide.xml')]
+            reload_action = self.model.ReloadPistol
+        elif reload_type == ItemsUtils.RELOAD_PISTOL_SHORT:
+            frames = [4, 37]
+            frame_actions = [partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_pistol_clipoff.xml'), partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_pistol_clipin.xml')]
+            reload_action = self.model.ReloadPistolShort
+        elif reload_type == ItemsUtils.RELOAD_BULLPUP:
+            frames = [17, 60, 96]
+            frame_actions = [partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_bullpup_clipoff.xml'), partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_bullpup_clipin.xml'), partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_bullpup_slide.xml')]
+            reload_action = self.model.ReloadBullpup
+        elif reload_type == ItemsUtils.RELOAD_BULLPUP_SHORT:
+            frames = [17, 60]
+            frame_actions = [partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_bullpup_clipoff.xml'), partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_bullpup_clipin.xml')]
+            reload_action = self.model.ReloadBullpupShort
+        elif reload_type == ItemsUtils.RELOAD_LAUNCHER:
+            FRAME_GRENADE_GETTED = 64
+            FRAME_GRENADE_INSERTED = 30
+            frames = [10, FRAME_GRENADE_INSERTED, 112]
+            frame_actions = [partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_rpg_lower.xml'), partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_rpg_insert.xml'), partial(SFXer.ReloadEffect, self, 'sfx\\Weapons\\Reload\\reload_rpg_up.xml')]
+            reload_action = self.model.ReloadLauncher
+            rocket = BigWorld.Model('characters/items/weapons/attach/node_rocket_rpg7_lod1.model')
+
+            def insert():
+                self.model.effectorleft = None
+                self.autogunModel.launchnode1 = rocket
+                return
+
+            def giveRocket():
+                self.model.effectorleft = rocket
+
+            reload_framerate = get_action_frame_rate(reload_action, time_to_reload)
+            BigWorld.callback(102 / reload_framerate, insert)
+            BigWorld.callback(60 / reload_framerate, giveRocket)
+        else:
+            if reload_type == ItemsUtils.RELOAD_BREECH_SHOTGUN:
+                self.BreechReloadStart(time_to_reload, num_added_ammo)
+                return
+            if reload_type == ItemsUtils.RELOAD_MANUAL:
+                self.ManualReloadStart(time_to_reload, num_added_ammo, False)
+                return
+            if reload_type == ItemsUtils.RELOAD_MANUAL_SHORT:
+                self.ManualReloadStart(time_to_reload, num_added_ammo, True)
+                return
+            print 'error weapon type:', ItemsUtils.GetEquippedItemType(self)
+            return
+        reload_framerate = get_action_frame_rate(reload_action, time_to_reload)
+        self.StartSFXSeries(reload_framerate, frame_actions, frames)
+        execute_model_action(reload_action, time_to_reload, self.onReloadAnimationEnd)
+
+    def UnJammWeapon(self, reload_type, action_time):
+        reload_action = None
+        if reload_type == ItemsUtils.RELOAD_AUTOGUN:
+            reload_action = self.model.UnjammAutogun
+        elif reload_type == ItemsUtils.RELOAD_PISTOL:
+            reload_action = self.model.UnjammPistol
+        elif reload_type == ItemsUtils.RELOAD_BULLPUP:
+            reload_action = self.model.UnjammBullpup
+        elif reload_type == ItemsUtils.RELOAD_LAUNCHER:
+            reload_action = self.model.UnjammLauncher
+        elif reload_type == ItemsUtils.RELOAD_BREECH_SHOTGUN:
+            reload_action = self.model.UnjammShutter
+        elif reload_type == ItemsUtils.RELOAD_MANUAL:
+            reload_action = self.model.UnjammedAutogun
+        else:
+            print 'error weapon type:', ItemsUtils.GetEquippedItemType(self)
+        self.EnableModelPitch(False)
+        execute_model_action(reload_action, action_time, self.UnJammWeaponEnded)
+        SFXer.UnJammEffect(self)
+        return action_time
+
+    def UnJammWeaponEnded(self):
+        self.EnableModelPitch(True)
+
+    def InFormWeponJammed(self, type, action_time):
+        reload_action = None
+        if type in [ItemsUtils.RELOAD_AUTOGUN,
+         ItemsUtils.RELOAD_BULLPUP,
+         ItemsUtils.RELOAD_LAUNCHER,
+         ItemsUtils.RELOAD_BREECH_SHOTGUN,
+         ItemsUtils.RELOAD_MANUAL]:
+            reload_action = self.model.JammAutogun
+        elif type == ItemsUtils.RELOAD_PISTOL:
+            reload_action = self.model.JammPistol
+        else:
+            print 'error weapon type:', ItemsUtils.GetEquippedItemType(self)
+        self.EnableModelPitch(False)
+        SFXer.JammEffect(self)
+        execute_model_action(reload_action, action_time, self.InFormWeponJammedEnded)
+        return action_time
+
+    def InFormWeponJammedEnded(self):
+        self.EnableModelPitch(True)
+
+    def launcherReloadStage1(self):
+        self.loaded_munition = self.getModelByNamesDict(self.GetEquippedItemAmmoModels(ItemsCatalog.ACTIVE))
+        self.model.effectorleft = self.loaded_munition
+
+    def launcherReloadStage2(self):
+        self.model.effectorleft = BigWorld.Model('')
+        self.SetAvatarGun()
+
+    def onReloadAnimationEnd(self):
+        self.EnableModelPitch(True)
+
+    def onJump(self):
+        SFXer.JumpEffect(self)
+        try:
+            self.model.Jump()
+        except:
+            print 'model no Jump'
+
+    def onGeometryMapped(self, spaceName):
+        print 'Avatar.onGeometryMapped: self.spaceID = ', self.spaceID
+
+    def systemMessage(self, msg, color):
+        BWPersonality.gpd.sendMessageColored(msg, color)
+
+    def getDefaultModels(self):
+        return parse_character_default_models(self.defaultModels)
+
+    def drawEquipGrenade(self, grenadeType):
+        pass
+
+    def DrawUseItem(self, item_type, duration):
+        param = ItemsCatalog.GetItemParam(item_type)
+        action = None
+        if ItemsCatalog.EFFECTS_HEAL in param['Effect'].keys():
+            action = self.model.Heal
+            SFXer.HealEffect(self)
+        else:
+            if ItemsCatalog.EFFECTS_REPAIR in param['Effect'].keys():
+                SFXer.RepairEffect(self)
+                return
+            if ItemsCatalog.EFFECTS_EAT in param['Effect'].keys():
+                action = self.model.StandEeating
+                SFXer.EatEffect(self)
+            elif ItemsCatalog.EFFECTS_RECIPE in param['Effect'].keys():
+                pass
+            else:
+                return
+        self.EnableModelPitch(False)
+        self.model.effectorright = None
+        execute_model_action(action, duration, self.DrawUseItemEnd)
+        return
+
+    def DrawUseItemOnTarget(self, item_type, duration):
+        action = None
+        param = ItemsCatalog.GetItemParam(item_type)
+        if ItemsCatalog.EFFECTS_HEAL in param['Effect'].keys():
+            action = self.model.HealOther
+            SFXer.HealEffect(self)
+        elif ItemsCatalog.EFFECTS_REPAIR in param['Effect'].keys():
+            SFXer.RepairEffect(self)
+        elif ItemsCatalog.EFFECTS_RECIPE in param['Effect'].keys():
+            pass
+        else:
+            return
+        execute_model_action(action, duration, self.DrawUseItemOnTargetEnd)
+        self.EnableModelPitch(False)
+        self.model.effectorright = None
+        return
+
+    def DrawUseItemEnd(self):
+        if hasattr(self, 'autogunModel'):
+            self.model.effectorright = self.autogunModel
+        self.EnableModelPitch(True)
+
+    def DrawUseItemOnTargetEnd(self):
+        if hasattr(self, 'autogunModel'):
+            self.model.effectorright = self.autogunModel
+        self.EnableModelPitch(True)
+
+    def GetModelShootPossibility(self):
+        if not self.model.effectorright:
+            return False
+        return True
+
+    def DrawUnequipItem(self, unequippedItemType, equippedItemType, unequipping_time, equipping_time):
+        self.EnableModelPitch(False)
+        equip_function = partial(self.DrawEquipItem, equippedItemType, equipping_time)
+        self.DoUnequipAction(unequippedItemType, unequipping_time, equip_function)
+
+    def DoUnequipAction(self, item_type, time, call_back = None):
+        if item_type:
+            item_params = ItemsCatalog.GetItemParam(item_type)
+            if item_params:
+                weapon_type = item_params['GunType']
+                item_class = ItemsCatalog.GetItemClass(item_type)
+                if item_class == ItemsCatalog.WEAPON:
+                    action_name = None
+                    if weapon_type in [ItemsCatalog.PISTOL, ItemsCatalog.REVOLVER]:
+                        action_name = self.model.TakeOffPistol
+                    elif weapon_type in [ItemsCatalog.ASSAULT_RIFLE,
+                     ItemsCatalog.SNIPER_RIFLE,
+                     ItemsCatalog.SHOTGUN,
+                     ItemsCatalog.MACHINE_GUN,
+                     ItemsCatalog.SUB_MACHINE_GUN,
+                     ItemsCatalog.RIFLE]:
+                        action_name = self.model.TakeOffAutogun
+                    elif weapon_type in [ItemsCatalog.ROCKET_LAUNCHER, ItemsCatalog.GRENADE_LAUNCHER]:
+                        action_name = self.model.TakeOffLauncher
+                    execute_model_action(action_name, time, call_back)
+                    SFXer.WeaponEquipEffect(self)
+                    return
+        if call_back:
+            BigWorld.callback(time, call_back)
+        return
+
+    def onSwitchSpotLight(self, lightState):
+        if PlayerAvatar.CanTurnOnSpotLight != None:
+            if lightState:
+                SFXer.AddPixieToEntity(self, 'particles/fonar_glow.xml', node=self.model.effectorright.lights.node('HP_lens'))
+            else:
+                self.ClearWeaponLightsAttachments()
+            SFXer.FlashlightSwitch(self)
+        return
+
+    def ClearWeaponLightsAttachments(self):
+        if self.model:
+            if self.model.effectorright:
+                if self.model.effectorright.lights:
+                    for attachment in self.model.effectorright.lights.node('HP_lens').attachments:
+                        self.model.effectorright.lights.node('HP_lens').detach(attachment)
+
+    def EquipAnimationEnd(self):
+        self.SetAvatarModel()
+        self.EnableModelPitch(True)
+
+    def DrawEquipItem(self, equippedItemType, equip_time):
+        if equippedItemType:
+            item_params = ItemsCatalog.GetItemParam(equippedItemType)
+            if item_params:
+                self.SetAvatarModel()
+                item_class = ItemsCatalog.GetItemClass(equippedItemType)
+                if item_class == ItemsCatalog.EXPLOSION:
+                    BigWorld.callback(equip_time, self.EquipAnimationEnd)
+                    return
+                weapon_type = item_params['GunType']
+                if item_class == ItemsCatalog.WEAPON:
+                    equipTime = 0.0
+                    if weapon_type in [ItemsCatalog.PISTOL, ItemsCatalog.REVOLVER]:
+                        equip_action = self.model.TakeInPistol
+                    elif weapon_type in [ItemsCatalog.ASSAULT_RIFLE,
+                     ItemsCatalog.SNIPER_RIFLE,
+                     ItemsCatalog.SHOTGUN,
+                     ItemsCatalog.MACHINE_GUN,
+                     ItemsCatalog.SUB_MACHINE_GUN,
+                     ItemsCatalog.RIFLE]:
+                        equip_action = self.model.TakeInAutogun
+                    elif weapon_type in [ItemsCatalog.ROCKET_LAUNCHER, ItemsCatalog.GRENADE_LAUNCHER]:
+                        equip_action = self.model.TakeInLauncher
+                    else:
+                        print 'error item class:', equippedItemType
+                    SFXer.WeaponEquipEffect(self)
+                    execute_model_action(equip_action, equip_time, self.EquipAnimationEnd)
+                    return
+        BigWorld.callback(equip_time, self.EquipAnimationEnd)
+
+    def SitGround(self, sit_id, sit, sat, stand):
+        if sit_id == 1:
+            sit_action = self.model.SitGroundAssIn
+            sat_action = self.model.SitGroundAssIdle
+            stand_action = self.model.SitGroundAssOut
+        if sit_id == 2:
+            sit_action = self.model.SitBackpackIn
+            sat_action = self.model.SitBackpackIdle
+            stand_action = self.model.SitBackpackOut
+        if sit_id == 3:
+            sit_action = self.model.SitGroundXIn
+            sat_action = self.model.SitGroundXIdle
+            stand_action = self.model.SitGroundXOut
+        if sit_id == 4:
+            sit_action = self.model.SitLegsIn
+            sat_action = self.model.SitLegsIdle
+            stand_action = self.model.SitLegsOut
+        if sit:
+            execute_model_action(sit_action, sit_action.duration)
+        if sat:
+            execute_model_action(sat_action)
+        if stand:
+            execute_model_action(stand_action, stand_action.duration)
+
+    def SitGroundDuration(self, sit_id, is_sitting):
+        if sit_id == 1:
+            sit_action = self.model.SitGroundAssIn
+            stand_action = self.model.SitGroundAssOut
+        if sit_id == 2:
+            sit_action = self.model.SitBackpackIn
+            stand_action = self.model.SitBackpackOut
+        if sit_id == 3:
+            sit_action = self.model.SitGroundXIn
+            stand_action = self.model.SitGroundXOut
+        if sit_id == 4:
+            sit_action = self.model.SitLegsIn
+            stand_action = self.model.SitLegsOut
+        if is_sitting:
+            return sit_action.duration
+        else:
+            return stand_action.duration
+
+    def CanSniping(self):
+        gun_type = ItemsUtils.GetEquippedItemType(self)
+        return Character.CanSniping(self, gun_type)
+
+    def onAnomalyDrag(self, anomalyId, posAndYaw, velocity, verticalRange, grabDuration, shouldFly):
+        pass
+
+    def sitDown(self):
+        pass
+
+    def standUp(self):
+        pass
+
+    def AvatarCanRedrawModel(self):
+        return not self.dead
+
+    def getAnimation(self, animationID):
+        if animationID == Animations.STUN:
+            return self.model.Stun
+
+    def beginAnimation(self, animationID, duration):
+        an = self.getAnimation(animationID)
+        if an:
+            an()
+
+    def endAnimation(self, animationID):
+        an = self.getAnimation(animationID)
+        if an:
+            an().stop()
+
+    def setControlLockByEffect(self, effect_id, duration):
+        pass
+
+    def removeControlLockByEffect(self, effect_id):
+        pass
+
+    def ManipulateTarget(self):
+        pass
+
+    def onStartTrading(self, entity):
+        pass
+
+    def onShowSubmitQuestDialog(self, sourceEntityID, questID):
+        self.showSubmitQuestDialog(sourceEntityID, questID)
+
+    def onShowGetQuestDialog(self, sourceEntityID, questID):
+        self.showGetQuestDialog(sourceEntityID, questID)
+
+    def updateOnline(self, num):
+        pass
+
+    def showConfirmNotice(self, typeID, dataID, dataStrings):
+        pass
+
+    def worldLoadStatus(self, status):
+        pass
+
+    def getEquipTimeModifyer(self, gun_type):
+        return Character.getEquipTimeModifyer(self, gun_type)
+
+    def clanRosterUpdate(self, roster):
+        pass
+
+    def clanMemberRosterUpdate(self, member):
+        pass
+
+    def detectorReading(self, dist, detectType1, detectType2):
+        pass
+
+    def forceMusic(self, id, looped):
+        pass
+
+    def WeaponChanged(self):
+        AvatarItemHolder.onWeaponChanged(self)
+
+    def combatLogEvent(self, logEntry):
+        pass
+
+    def makeMapNotes(self, notes):
+        pass
+
+    def pvpDefenceDataUpdate(self, flags, capturedPoints, maxPoints, timeRemaining):
+        pass
+
+    def clanRanksUpdate(self, ranks, self_id):
+        pass
+
+    def iscanBuyInClanShop(self, value):
+        pass
+
+    def ACRun(self, script):
+        pass
+
+    def baseAreaStatusUpdate(self, data, serverTime):
+        pass
+
+    def dropItem(self, id):
+        pass
+
+    def onReputationChanged(self, output_string):
+        pass
+
+    def acAddTask(self, script):
+        pass
+
+    def __init_module__(self):
+        pass
+
+    def acAddCellTask(self):
+        pass
+
+    def acOnValidated(self, hsh, result):
+        pass
+
+    def showClanCreateDialog(self):
+        pass
+
+    def printDebugInfo(self):
+        pass
+
+    def clearDebugInfo(self):
+        pass
+
+    def onEnterBase(self, status, clanName, time):
+        pass
+
+    def updateBaseTime(self, time):
+        pass
+
+    def updateBaseStatus(self, status):
+        pass
+
+    def onLeaveBase(self):
+        pass
+
+    def updateFlag(self, id, level, progress, winning_clanName):
+        pass
+
+    def onEnterRFPoint(self, name, status, progress, clan_name, time):
+        pass
+
+    def onLeaveRFPoint(self):
+        pass
+
+    def setTradeState(self, state):
+        pass
+
+    def onTeleportCalled(self, teleport_type, expected_position):
+        self.filter = BigWorld.DumbFilter()
+
+    def onTeleportEnded(self, wasSuccessful):
+        self.filter = BigWorld.AvatarFilter()
+
+    def ServerRestrict(self, channel, action_duration):
+        print 'This method must not work'
+
+    def InformExchangeTimer(self, num_seconds):
+        print 'This method must not work'
+
+    def debug_sendCreatureInfo(self, entityID, data):
+        pass
+
+    def tellAboutClanStatus(self, data, stringData, status):
+        pass
+
+    def onWeatherChanged(self, weather_system_name):
+        pass
+
+    def leaveClan(self):
+        pass
+
+    def show_safe_timer(self, timer):
+        pass
+
+    def askUseItemOnTarget(self, target_id, item_id):
+        print 'Avatar::askUseItemOnTarget'
+
+    def show_iwannadie_timer(self, is_showing):
+        pass
+
+    def updateHungryAndThirstBar(self, new_hungry, new_thirst):
+        pass
+
+    def ProceedCreateUserFire(self, d):
+        pass
+
+    def Burn(self, status):
+        self._stopWait_endBurnSmoke()
+        if self._isBurn and not status:
+            self._isBurn_smoke = True
+            self._hd_end_burn_smoke = BigWorld.callback(7.0, self._endBurnSmoke)
+        else:
+            self._isBurn_smoke = False
+            self._stopWait_endBurnSmoke()
+        self._isBurn = status
+        try:
+            self._updataBurn()
+        except Exception as e:
+            print 'Burn _updataBurn error', status
+            traceback.print_exc()
+
+    def Poison(self, status):
+        pass
+
+    def _endBurnSmoke(self):
+        self._isBurn_smoke = False
+        self._updataBurn()
+
+    def _stopWait_endBurnSmoke(self):
+        if self._hd_end_burn_smoke:
+            BigWorld.cancelCallback(self._hd_end_burn_smoke)
+        self._hd_end_burn_smoke = None
+        return
+
+    def _updataBurn(self):
+        if not self._particles_burn:
+            self._particles_burn = Pixie.create('particles/_bonfire_pers.xml')
+        if not self._particles_burn_smoke:
+            self._particles_burn_smoke = Pixie.create('particles/fire_place03.xml')
+        if not self._last_hips:
+            self._last_hips = self.model.node('hips')
+        curent_hips = self.model.node('hips')
+        if curent_hips != self._last_hips:
+            if self._particles_burn in self._last_hips.attachments:
+                self._last_hips.detach(self._particles_burn)
+            if self._particles_burn_smoke in self._last_hips.attachments:
+                self._last_hips.detach(self._particles_burn_smoke)
+        isP_fire = self._particles_burn in curent_hips.attachments
+        isP_smoke = self._particles_burn_smoke in curent_hips.attachments
+        if self._isBurn:
+            if not isP_fire:
+                curent_hips.attach(self._particles_burn)
+            if isP_smoke:
+                curent_hips.detach(self._particles_burn_smoke)
+        else:
+            if isP_fire:
+                curent_hips.detach(self._particles_burn)
+            if self._isBurn_smoke:
+                if not isP_smoke:
+                    curent_hips.attach(self._particles_burn_smoke)
+            elif isP_smoke:
+                curent_hips.detach(self._particles_burn_smoke)
+        self._last_hips = curent_hips
+
+    def stoneAnomalyHit(self, localStoneID, anomalyEntityID, anomalyPos, anomalyRadius):
+        entity = BigWorld.entity(localStoneID)
+        if not entity:
+            return
+        entity.startAnomalyEffectHit(anomalyEntityID, anomalyPos, anomalyRadius)
+
+    def showInfoTradeBase(self):
+        pass
+
+    def hm_message(self, msgID, data):
+        pass
+
+    def hm_positions(self, data):
+        pass
+
+    def hm_CatalogResponseFiltered(self, data, page_start, last_index_item, all_index_item):
+        pass
+
+    def set_HUNTER_listOfWanted(self, old):
+        pass
+
+    def set_HUNTER_lostListOfWanted(self, old):
+        pass
+
+    def setTimeDiff(self, serverTime):
+        pass
+
+    def setNested_donateBase(self, path, oldValue):
+        pass
+
+    def set_donateBase(self, oldValue):
+        pass
+
+    def setDonateBaseList(baseList):
+        pass
+
+    def cashback(self):
+        pass
+
+    def set_deposit(self, oldValue):
+        pass
+
+    def setClanLeader(self, value):
+        pass
+
+    def addBboxData(self, data):
+        self.bboxData = data
+
+    def getWarehouseData(self, entity_id):
+        pass
+
+    def getWarehouseData(self, entity_id):
+        pass
+
+    def showBaseMessage(self, message_id, base_name):
+        pass
+
+    def on_AllRoomID(self, data):
+        pass
+
+    def on_AllRoomData(self, data, listIDRooms):
+        print 'on_AllRoomData', dict(data), list(listIDRooms)
+        self.tmp_romsdata = data
+        self.tmp_listIDRooms = listIDRooms
+
+    def on_roomData(self, data):
+        print 'on_roomData', dict(data)
+        self.tmp_on_roomData = data
+
+    def askChoiceTeam(self):
+        print 'askChoiceTeam'
+
+    def set_teamID(self, old):
+        print 'Avatar  (%s) set_teamID :' % self.id, old, '->', self.teamID
+        BigWorld.player().onAvatarTeamIDChanged(self.id, old, self.teamID)
+
+    def set_ninjaMode(self, old):
+        BWPersonality.GUICore.healthBarGUI.component.NinjaIcon.visible = self.ninjaMode
+
+    def roomEvent(self, eventID, code, msg):
+        print 'roomEvent', eventID, msg
+
+    def onAvatarModelChangedForPlayer(self, *e):
+        pass
+
+    def avatarLeaveWorld(self, *e):
+        pass
+
+    def onAvatarTeamIDChanged(self, *e):
+        pass
+
+    def on_roomDamage(self, *e):
+        pass
+
+
+from PlayerAvatar import PlayerAvatar
+
+def parse_character_default_models(packed_avatar_model):
+    model_part_by_section = {'head': ItemsCatalog.HEAD,
+     'body': ItemsCatalog.SHIRT,
+     'hands': ItemsCatalog.HANDS,
+     'legs': ItemsCatalog.PANTS,
+     'boots': ItemsCatalog.BOOTS}
+    default_models = {}
+    for section, model_def in packed_avatar_model.items():
+        model_part = model_part_by_section[section]
+        type_id = model_def['type_id']
+        if section == 'head':
+            default_models[model_part] = heads.preset_by_headid[type_id]
+        if section == 'body':
+            default_models[model_part] = type_id
+        if section == 'legs':
+            default_models[model_part] = type_id
+        if section == 'hands':
+            default_models[model_part] = type_id
+        if section == 'boots':
+            default_models[model_part] = type_id
+
+    return default_models

@@ -1,0 +1,142 @@
+# Embedded file name: scripts/client/Camera.py
+"""
+        free camera realisation
+        use Camera instance of singleton FreeCamera for convenient use
+
+        @author: metrick
+        @todo:
+                keyframed realisation method needs to remake low-level mechanism
+                (necessary add the callbacks to keyframes to use this most flexible)
+"""
+import BigWorld
+import Math
+import math
+import Keys
+
+class FreeCamera(object):
+    """
+    Main singleton of free camera
+    """
+    freeCamera_matrix = None
+    Velocity = 10.0
+
+    def __init__(self):
+        self.__online = False
+
+    def __freeCamera(self):
+        self.freeCamera_model = BigWorld.Model('')
+        BigWorld.addModel(self.freeCamera_model)
+        self.freeCamera_model.position = Math.Matrix(BigWorld.camera().target).translation
+        self.freeCamera_matrix = self.freeCamera_model.matrix
+        BigWorld.camera().target = self.freeCamera_matrix
+        self.mover = Math.MatrixAnimation()
+        self.mover.keyframes = [(0.0, self.freeCamera_matrix)]
+        self.mover.loop = False
+        self.mover.time = 0.0
+        self.motor = BigWorld.Servo(self.mover)
+        self.motor.signal.time = 0.0
+        self.freeCamera_model.addMotor(self.motor)
+        self.old_turning_halfLife = BigWorld.camera().turningHalfLife
+        BigWorld.camera().turningHalfLife = 0.2
+        self.old_person_mode = BigWorld.camera().firstPerson
+        BigWorld.camera().firstPerson = True
+
+    def __playerCamera(self):
+        """ Visual motion back to previous camera position """
+
+        def playerCamera_2():
+            BigWorld.camera().target = BigWorld.PlayerMatrix()
+            BigWorld.camera().source = BigWorld.dcursor().matrix
+            old_turning_halfLife = getattr(self, 'old_turning_halfLife', None)
+            if old_turning_halfLife is not None:
+                BigWorld.camera().turningHalfLife = old_turning_halfLife
+            old_person_mode = getattr(self, 'old_person_mode', None)
+            if old_person_mode is not None:
+                BigWorld.camera().firstPerson = old_person_mode
+            return
+
+        self.freeCamera_moveTo(BigWorld.player().position, 1.0)
+        BigWorld.callback(1.0, playerCamera_2)
+
+    def move_freeCamera(self, time_fix = 0.1):
+        """
+        Moves camera towards direction with time_fix
+        (@todo: time_fix default is 0.1, but BigWorld.callback is deviated, see __doc__ of Camera module)
+        """
+        if not self.online:
+            return
+        else:
+            if BigWorld.isKeyDown(Keys.KEY_NUMPADMINUS) or BigWorld.isKeyDown(Keys.KEY_MINUS):
+                self.Velocity -= 50 * time_fix
+            if BigWorld.isKeyDown(Keys.KEY_ADD):
+                self.Velocity += 50 * time_fix
+            if self.Velocity < 0:
+                self.Velocity = 0
+            vel_mult = 0
+            if BigWorld.isKeyDown(Keys.KEY_LSHIFT) or BigWorld.isKeyDown(Keys.KEY_RSHIFT):
+                vel_mult = self.Velocity * 0.5
+            distance = self.Velocity * time_fix + vel_mult
+            if self.freeCamera_matrix is None:
+                return
+            direction_cursor = Math.Matrix(BigWorld.dcursor().matrix)
+            translation = Math.Matrix(self.freeCamera_matrix).translation
+            normal = Math.Vector3()
+            if BigWorld.isKeyDown(Keys.KEY_W) or BigWorld.isKeyDown(Keys.KEY_UPARROW):
+                normal.setPitchYaw(direction_cursor.pitch, direction_cursor.yaw)
+                normal.normalise()
+                normal *= distance
+                translation += normal
+            if BigWorld.isKeyDown(Keys.KEY_S) or BigWorld.isKeyDown(Keys.KEY_DOWNARROW):
+                normal.setPitchYaw(direction_cursor.pitch, direction_cursor.yaw)
+                normal = -normal
+                normal.normalise()
+                normal *= distance
+                translation += normal
+            if BigWorld.isKeyDown(Keys.KEY_A) or BigWorld.isKeyDown(Keys.KEY_LEFTARROW):
+                normal.setPitchYaw(0, direction_cursor.yaw - math.pi / 2)
+                normal.normalise()
+                normal *= distance
+                translation += normal
+            if BigWorld.isKeyDown(Keys.KEY_D) or BigWorld.isKeyDown(Keys.KEY_RIGHTARROW):
+                normal.setPitchYaw(0, direction_cursor.yaw + math.pi / 2)
+                normal.normalise()
+                normal *= distance
+                translation += normal
+            if BigWorld.isKeyDown(Keys.KEY_SPACE):
+                normal.setPitchYaw(direction_cursor.pitch - math.pi / 2, direction_cursor.yaw)
+                normal.normalise()
+                normal *= distance
+                translation += normal
+            if BigWorld.isKeyDown(Keys.KEY_LCONTROL) or BigWorld.isKeyDown(Keys.KEY_RCONTROL):
+                normal.setPitchYaw(direction_cursor.pitch + math.pi / 2, direction_cursor.yaw)
+                normal.normalise()
+                normal *= distance
+                translation += normal
+            self.freeCamera_moveTo(translation, time_fix)
+            return
+            return
+
+    def freeCamera_moveTo(self, translation, time = 0.3):
+        """ Moves camera to specified translation with specified time (without specified velocity) """
+        if not self.online:
+            return
+        destination_matrix = Math.Matrix()
+        destination_matrix.translation = translation
+        direction_cursor = Math.Matrix(BigWorld.dcursor().matrix)
+        self.motor.signal.time = 0.0
+        self.motor.signal.keyframes = [(0.0, self.motor.signal.keyframes[-1][1]), (time, destination_matrix)]
+
+    @property
+    def online(self):
+        return self.__online
+
+    @online.setter
+    def online(self, value):
+        if not self.__online and value:
+            self.__freeCamera()
+        elif self.__online and not value:
+            self.__playerCamera()
+        self.__online = value
+
+
+Camera = FreeCamera()

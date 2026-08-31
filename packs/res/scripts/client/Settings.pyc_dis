@@ -1,0 +1,888 @@
+# Embedded file name: scripts/client/Settings.py
+"""
+Created on 31.03.2011
+
+@author: muzhig
+"""
+import BigWorld
+import json
+import os
+import re
+import BWPersonality
+from Helpers import BWKeyBindings
+import ResMgr
+from gui_const import MESSAGEBOX
+from msgbox_templates import ask_yes_no
+from soGUI.soOptionsGUI import soOptionsGUI2
+from utils_bw import writeDataSectionValue
+PRESETS_FILE = 'system/data/graphics_settings_presets.xml'
+SETTINGS_FILE = 'settings.json'
+DEBUG_PRINTS = False
+presetNamesIndexes = ((soOptionsGUI2.VIDEO_QUALITY_ULTRA, 'Very High'),
+ (soOptionsGUI2.VIDEO_QUALITY_HIGH, 'High'),
+ (soOptionsGUI2.VIDEO_QUALITY_NORMAL, 'Medium'),
+ (soOptionsGUI2.VIDEO_QUALITY_LOW, 'Low'))
+
+class Settings(object):
+    instance = None
+
+    def __new__(cls, *dt, **mp):
+        if cls.instance is None:
+            cls.instance = object.__new__(cls, *dt, **mp)
+        return cls.instance
+
+    ratios = {round(5.0 / 4, 2): (5, 4),
+     round(4.0 / 3, 2): (4, 3),
+     round(3.0 / 2, 2): (3, 2),
+     round(16.0 / 10, 2): (16, 10),
+     round(5.0 / 3, 2): (5, 3),
+     round(16.0 / 9, 2): (16, 9),
+     round(17.0 / 9, 2): (17, 9)}
+    general_pp_chains = high_setting_ppchain, medium_setting_ppchain, low_setting_ppchain = ('High Graphics Setting', 'Medium Graphics Setting', 'Low Graphics Setting')
+    general_pp_chains_by_quality = {soOptionsGUI2.VIDEO_QUALITY_ULTRA: general_pp_chains.index(high_setting_ppchain),
+     soOptionsGUI2.VIDEO_QUALITY_HIGH: general_pp_chains.index(high_setting_ppchain),
+     soOptionsGUI2.VIDEO_QUALITY_NORMAL: general_pp_chains.index(medium_setting_ppchain),
+     soOptionsGUI2.VIDEO_QUALITY_LOW: general_pp_chains.index(low_setting_ppchain)}
+    additional_ppchains = ppchain_ssao, ppchain_godrays = ('SSAO', 'god rays')
+    additional_pp_chains_by_quality = {soOptionsGUI2.VIDEO_QUALITY_ULTRA: {ppchain_godrays: True,
+                                         ppchain_ssao: True},
+     soOptionsGUI2.VIDEO_QUALITY_HIGH: {ppchain_godrays: True,
+                                        ppchain_ssao: True},
+     soOptionsGUI2.VIDEO_QUALITY_NORMAL: {ppchain_godrays: True,
+                                          ppchain_ssao: False},
+     soOptionsGUI2.VIDEO_QUALITY_LOW: {ppchain_godrays: False,
+                                       ppchain_ssao: False}}
+    default_pp_chain_index = general_pp_chains.index(high_setting_ppchain)
+    min_sensitivity = 0.001
+    max_sensitivity = 0.02
+    default_sensitivity = 0.004
+    default_sensitivity_value = (default_sensitivity - min_sensitivity) / (max_sensitivity - min_sensitivity)
+
+    def __init__(self):
+        if not hasattr(self, 'initialized'):
+            self.keyBindings = None
+            self.pendingKeyBinds = None
+            self.current_PP_chain = None
+            self.customSettingsSata = {}
+            ppchain_ssao, ppchain_godrays = ('SSAO', 'god rays')
+            self.additionalsSettings = {ppchain_godrays: (0, ('ON', 'OFF'), (True, False)),
+             ppchain_ssao: (0, ('ON', 'OFF'), (True, False))}
+            self.initResolutions()
+            self.loadSettings()
+            self.loadAdditionalSettings()
+            self.initKeyBindings()
+            self.initGraphicPresets()
+            self.graphicsSettingsChanged = False
+            self.initialized = True
+        return
+
+    def onInit(self):
+        if self.getActualFullscreen():
+            self.applyVideoMode()
+
+    def onRecreateDevice(self):
+        if self.getFullscreen() != self.getActualFullscreen():
+            self.setFullscreen(self.getActualFullscreen())
+        self.saveSettings()
+        self.updateGUI()
+
+    def need_restart(self):
+        return self.graphicsSettingsChanged
+
+    def getRatio(self, width, height):
+        return Settings.ratios.get(round(float(width) / height, 2), (width, height))
+
+    def filterVideoModes(self, videoMode, ratioExactFit = False):
+        if videoMode['width'] < 1024:
+            return False
+        if videoMode['depth'] < 32:
+            return False
+        return True
+
+    def getAllResolutionsSorted(self):
+        return sorted(self.resolutions, cmp=lambda m1, m2: cmp(m1['width'], m2['width']) or cmp(m1['height'], m2['height']), reverse=True)
+
+    def getMaxScreenSize(self):
+        maxResolution = self.getAllResolutionsSorted()[0]
+        return (maxResolution['width'], maxResolution['height'])
+
+    def onGuiCoreInitialized(self):
+        self.registerListeners()
+        self.updateGUI()
+        self.applyPPchainIndex()
+        self.applyAdditionalPPchains()
+        self.applyMouseSensitivity()
+        self.applyMouseInvert()
+
+    def initGraphicPresets(self):
+        sect = ResMgr.openSection(PRESETS_FILE)
+        self.presets = {}
+        self.presetNames = []
+        for group in sect.values():
+            presetName = group.asString
+            if presetName:
+                preset = {}
+                for entry in group.values():
+                    if entry.name == 'entry':
+                        pref_name = entry.readString('label')
+                        preset[pref_name] = entry.readInt('activeOption')
+
+                self.presets[presetName] = preset
+                self.presetNames.append(presetName)
+
+    def loadSettings(self):
+        self.default_settings = {'minimapMinimize': False,
+         'fullscreen': False,
+         'language': 'russian',
+         'screenWidth': 1024,
+         'screenHeight': 720,
+         'preset': soOptionsGUI2.VIDEO_QUALITY_HIGH,
+         'musicVolume': 1.0,
+         'allVolume': 1.0,
+         'sfxVolume': 1.0,
+         'mouseSensitivity': self.default_sensitivity_value,
+         'mouseInvert': False,
+         'aspectRatio': '%s:%s' % self.screenRatio,
+         'pp_chain': self.default_pp_chain_index,
+         'keybindings': {}}
+        self.__settings_dict__ = {}
+        self.__settings_dict__.update(self.default_settings)
+        self.__readJSON__()
+
+    def loadAdditionalSettings(self):
+        if not self.__settings_dict__.get('settings'):
+            return
+        ppchain_ssao, ppchain_godrays = ('SSAO', 'god rays')
+        self.additionalsSettings = {ppchain_godrays: (self.__settings_dict__.get('settings').get(ppchain_godrays), ('ON', 'OFF'), (True, False)),
+         ppchain_ssao: (self.__settings_dict__.get('settings').get(ppchain_ssao), ('ON', 'OFF'), (True, False))}
+
+    def setSetting(self, key, value, flush = False):
+        value = self.filterSettingValue(key, value)
+        self.__settings_dict__[key] = value
+        if flush:
+            self.saveSettings()
+        if key == 'preset':
+            self.applyGraphicsPreset()
+            self.graphicsSettingsChanged = True
+
+    def getSetting(self, key, default = None):
+        if default is None:
+            default = self.__settings_dict__.get(key)
+        return self.__settings_dict__.get(key, default)
+
+    def filterValueInRange(self, value, a, b, default = None):
+        if a <= value <= b:
+            return value
+        elif default is not None:
+            return default
+        else:
+            return min(max(value, a), b)
+
+    def filterValueIsTyped(self, value, tp, default):
+        try:
+            return tp(value)
+        except ValueError:
+            print 'ValueError: value %s casting to %s. Using default %s' % (value, tp.__name__, default)
+            return default
+
+    def filterValueMatchesRegex(self, value, pattern, default):
+        if not re.match(pattern, value):
+            print "ValueError: value %s doesn't match pattern %s. Using default %s" % (value, pattern, default)
+            return default
+        return value
+
+    def filterSettingValue(self, key, value):
+        settings_types = {'musicVolume': float,
+         'sfxVolume': float,
+         'allVolume': float,
+         'mouseSensitivity': float,
+         'fullscreen': bool,
+         'isNotifyFriendList': bool,
+         'mouseInvert': bool,
+         'preset': int,
+         'resolution': int,
+         'pp_chain': int,
+         'screenHeight': int,
+         'screenWidth': int,
+         'aspectRatio': str,
+         'login': str,
+         'language': str}
+        settings_ranges = {'musicVolume': (0.0, 1.0),
+         'sfxVolume': (0.0, 1.0),
+         'allVolume': (0.0, 1.0),
+         'mouseSensitivity': (0.0, 1.0),
+         'preset': (0, 4),
+         'resolution': (-1, len(self.resolutions) - 1),
+         'pp_chain': (0, len(self.general_pp_chains) - 1),
+         'screenWidth': (1024, self.maxScreenSize[0]),
+         'screenHeight': (720, self.maxScreenSize[1])}
+        settings_regex_matches = {'aspectRatio': '^\\d{1,2}:\\d{1,2}$'}
+        default = self.__settings_dict__.get(key)
+        if key in settings_types:
+            tp = settings_types[key]
+            value = self.filterValueIsTyped(value, tp, default)
+        if key in settings_ranges:
+            a, b = settings_ranges[key]
+            value = self.filterValueInRange(value, a, b, default)
+        if key in settings_regex_matches:
+            value = self.filterValueMatchesRegex(value, settings_regex_matches[key], default)
+        return value
+
+    def saveSettings(self):
+        self.setKeybindingsDict(self.keyBindings.JSON_getKeyBindingsDict())
+        self.__writeJSON__()
+
+    def initResolutions(self):
+        self.resolutions = [ dict(name='%sx%s' % (width, height), id=id, width=width, height=height, depth=depth, ratio=self.getRatio(width, height)) for id, width, height, depth, name in BigWorld.listVideoModes() if depth >= 32 and width >= 1024 ]
+        self.maxScreenSize = self.getMaxScreenSize()
+        self.screenRatio = self.getRatio(*self.maxScreenSize)
+        self.resolutions_by_ratio = {}
+        self.resolutions_by_id = {}
+        for r in self.resolutions:
+            if not self.resolutions_by_ratio.has_key(r['ratio']):
+                self.resolutions_by_ratio[r['ratio']] = []
+            self.resolutions_by_ratio[r['ratio']].append(r)
+            self.resolutions_by_id[r['id']] = r
+
+        self.ratios = sorted(self.resolutions_by_ratio.keys(), cmp=lambda w, h: (w, h) == self.screenRatio, reverse=True)
+
+    def getResolutionList(self, aspectRatio = None):
+        if aspectRatio is None:
+            return self.resolutions
+        else:
+            return self.resolutions_by_ratio.get(aspectRatio) or list()
+            return
+
+    def getFullscreen(self):
+        return self.getSetting('fullscreen')
+
+    def getLanguage(self):
+        return self.getSetting('language')
+
+    def setLanguage(self, language):
+        self.setSetting('language', language)
+
+    def getNotifyFriendList(self):
+        return self.getSetting('isNotifyFriendList')
+
+    def getActualFullscreen(self):
+        return not BigWorld.isVideoWindowed()
+
+    def setFullscreen(self, fullscreen):
+        self.setSetting('fullscreen', fullscreen)
+
+    def setNotifyFriendList(self, isNotifyFriendList):
+        return self.setSetting('isNotifyFriendList', isNotifyFriendList)
+
+    def applyFullscreen(self):
+        self.applyVideoMode()
+
+    def getResolutionID(self):
+        return self.getSetting('resolution')
+
+    def getResolutionByID(self, id = None):
+        if id is not None and self.resolutions_by_id.has_key(id):
+            return self.resolutions_by_id[id]
+        else:
+            width = int(BigWorld.screenWidth())
+            height = int(BigWorld.screenHeight())
+            for r in self.resolutions:
+                if width == r['width'] and height == r['height']:
+                    return r
+
+            r = {'id': None,
+             'width': width,
+             'height': height,
+             'name': '%sx%s' % (width, height),
+             'ratio': self.getRatio(width, height)}
+            return r
+
+    def getActualResolution(self):
+        """resolution that is currently applied"""
+        width = int(BigWorld.screenWidth())
+        height = int(BigWorld.screenHeight())
+        return self.getResolution(width, height)
+
+    def getResolution(self, width_or_id = None, height = None):
+        """returns resolution as dict
+        getResolution() currently selected in settings
+        getResolution(id) finds it by id, else None
+        getResolution(width,height) id is None if this this videomode is not listed in supported videomodes
+        """
+        if height is None:
+            if width_or_id is None:
+                width_or_id, height = self.getSetting('screenWidth'), self.getSetting('screenHeight')
+            elif self.resolutions_by_id.has_key(width_or_id):
+                return self.resolutions_by_id[width_or_id]
+            else:
+                return
+
+        for r in self.resolutions:
+            if width_or_id == r['width'] and height == r['height']:
+                return r
+
+        return {'id': None,
+         'width': width_or_id,
+         'height': height,
+         'name': '%sx%s' % (width_or_id, height),
+         'ratio': self.getRatio(width_or_id, height)}
+
+    def setResolution(self, width_or_resolution_or_ID, height = None):
+        if height is None:
+            if isinstance(width_or_resolution_or_ID, int):
+                r = self.getResolution(width_or_resolution_or_ID)
+            else:
+                r = width_or_resolution_or_ID
+            width_or_resolution_or_ID, height = r['width'], r['height']
+        self.setSetting('screenWidth', width_or_resolution_or_ID)
+        self.setSetting('screenHeight', height)
+        self.graphicsSettingsChanged = True
+        return
+
+    def applyVideoMode(self):
+        """
+        Applies selected resolution and fullscreen
+        Many magic here!
+        """
+        target_resolution = self.getResolution()
+        target_id = target_resolution['id']
+        actual_resolution = self.getActualResolution()
+        if not not self.getFullscreen():
+            must_be_windowed = target_resolution['id'] is None
+            is_windowed = not self.getActualFullscreen()
+            return is_windowed == must_be_windowed and actual_resolution['width'] == target_resolution['width'] and actual_resolution['height'] == target_resolution['height'] and None
+        else:
+            if must_be_windowed:
+                already_resized = False
+                if not is_windowed:
+                    if target_id is None:
+                        id = actual_resolution['id']
+                    else:
+                        id = target_id
+                    BigWorld.changeVideoMode(id, True)
+                BigWorld.resizeWindow(target_resolution['width'], target_resolution['height'])
+            else:
+                BigWorld.changeVideoMode(target_id, False)
+                ratio = float(target_resolution['width']) / target_resolution['height']
+                BigWorld.changeFullScreenAspectRatio(ratio)
+            return
+
+    def getGraphicsPresetIndex(self):
+        return self.getSetting('preset')
+
+    def getActualGraphicsPreferences(self):
+        currentPrefs = {}
+        for pref in BigWorld.graphicsSettings():
+            currentPrefs[pref[0]] = pref[1]
+
+        return currentPrefs
+
+    def getActualGraphicsPresetIndex(self):
+        currentPrefs = self.getActualGraphicsPreferences()
+        for preset_index, preset_name in presetNamesIndexes:
+            preset = self.presets[preset_name]
+            for pref_name, pref_value in preset.items():
+                if pref_name in currentPrefs and currentPrefs[pref_name] != pref_value:
+                    if DEBUG_PRINTS:
+                        print 'NO', pref_name, '=', currentPrefs[pref_name], ', NOT', pref_value
+                    break
+            else:
+                if DEBUG_PRINTS:
+                    print 'YES'
+                return preset_index
+
+        return soOptionsGUI2.VIDEO_QUALITY_CUSTOM
+
+    def setGraphicsPresetIndex(self, index):
+        self.setSetting('preset', index)
+
+    def applyGraphicsPreset(self):
+        index = self.getGraphicsPresetIndex()
+        if index == soOptionsGUI2.VIDEO_QUALITY_CUSTOM:
+            current_prefs = self.getActualGraphicsPreferences()
+            if self.customSettingsSata:
+                settings = self.customSettingsSata
+            else:
+                settings = self.__settings_dict__.get('settings')
+            for k, v in settings.items():
+                if k in self.additionalsSettings.keys():
+                    self.changeAdditionalsSettings(k, v)
+                elif k in current_prefs and current_prefs[k] != v:
+                    BigWorld.setGraphicsSetting(k, v)
+                    self.graphicsSettingsChanged = True
+                    self.customSettingsSata = None
+
+            return
+        else:
+            current_index = self.getActualGraphicsPresetIndex()
+            if index == current_index:
+                return
+            namesByIndexes = dict(presetNamesIndexes)
+            preset_name = namesByIndexes[index]
+            preset = self.presets[preset_name]
+            if DEBUG_PRINTS:
+                print 'preset:', preset_name
+            current_prefs = self.getActualGraphicsPreferences()
+            for k, v in preset.items():
+                if k in current_prefs and current_prefs[k] != v:
+                    try:
+                        BigWorld.setGraphicsSetting(k, v)
+                        if DEBUG_PRINTS:
+                            print k, v, 'OK'
+                    except:
+                        if DEBUG_PRINTS:
+                            print k, v, 'Failed'
+
+                    self.graphicsSettingsChanged = True
+
+            if self.general_pp_chains_by_quality.has_key(index):
+                valid_PPchain_index = self.general_pp_chains_by_quality[index]
+                self.setPPchainIndex(valid_PPchain_index)
+                self.applyPPchainIndex()
+            self.applyAdditionalPPchains()
+            return
+
+    def getMusicVolume(self):
+        return self.getSetting('musicVolume')
+
+    def getAllVolume(self):
+        return self.getSetting('allVolume')
+
+    def setAllVolume(self, volume):
+        self.setSetting('allVolume', volume)
+        import _FMOD
+        _FMOD.setMasterVolume(volume)
+
+    def setMusicVolume(self, volume):
+        self.setSetting('musicVolume', volume)
+        for sound in BWPersonality.sounds.Sound.current_sounds:
+            if sound.is_music:
+                sound.volume = volume
+
+        BWPersonality.music.updateVolume()
+
+    def getSfxVolume(self):
+        return self.getSetting('sfxVolume')
+
+    def setSfxVolume(self, volume):
+        self.setSetting('sfxVolume', volume)
+        for sound in BWPersonality.sounds.Sound.current_sounds:
+            if not sound.is_music:
+                sound.volume = volume
+
+        BWPersonality.music.updateVolume()
+
+    def getMouseSensitivity(self):
+        return self.getSetting('mouseSensitivity')
+
+    def setMouseSensitivity(self, volume):
+        self.setSetting('mouseSensitivity', volume)
+
+    def applyMouseSensitivity(self):
+        BigWorld.dcursor().mouseSensitivity = self.min_sensitivity + (self.max_sensitivity - self.min_sensitivity) * self.getMouseSensitivity()
+
+    def getAspectRatio(self):
+        return tuple(map(int, self.getSetting('aspectRatio').split(':')))
+
+    def setAspectRatio(self, ratio):
+        self.setSetting('aspectRatio', '%s:%s' % ratio)
+
+    def applyAspectRatio(self):
+        pass
+
+    def getMouseInvert(self):
+        return self.getSetting('mouseInvert')
+
+    def setMouseInvert(self, mouseInvert):
+        self.setSetting('mouseInvert', mouseInvert)
+
+    def applyMouseInvert(self):
+        BigWorld.dcursor().invertVerticalMovement = self.getMouseInvert()
+
+    def getPPchainIndex(self):
+        return self.getSetting('pp_chain')
+
+    def setPPchainIndex(self, pp_chain_index):
+        self.setSetting('pp_chain', pp_chain_index)
+
+    def applyPPchainIndex(self):
+        valid_pp_chain = self.general_pp_chains[self.getPPchainIndex()]
+        if DEBUG_PRINTS:
+            print 'PP chain', valid_pp_chain
+        if self.current_PP_chain != valid_pp_chain:
+            old_PP_chain = self.current_PP_chain
+            if self.current_PP_chain:
+                if not self.unload_PP_chain(self.current_PP_chain):
+                    print 'Cant unload old ppchain(%s), so you cant load new one(%s)' % (self.current_PP_chain, valid_pp_chain)
+                    return False
+                self.current_PP_chain = None
+            if self.load_PP_chain(valid_pp_chain):
+                self.current_PP_chain = valid_pp_chain
+                return True
+            if old_PP_chain and self.load_PP_chain(old_PP_chain):
+                self.current_PP_chain = old_PP_chain
+            return False
+        else:
+            return
+
+    def applyAdditionalPPchains(self):
+        quality = self.getGraphicsPresetIndex()
+        additionals = {}
+        if quality == soOptionsGUI2.VIDEO_QUALITY_CUSTOM:
+            for k, v in self.additionalsSettings.items():
+                if v[0] == None:
+                    additionals[k] = v[2][0]
+                else:
+                    additionals[k] = v[2][v[0]]
+
+        else:
+            additionals = self.additional_pp_chains_by_quality[quality]
+        for chain, value in additionals.items():
+            if value:
+                if not self.load_PP_chain(chain):
+                    print 'Cant load pp chain:', chain
+            elif not self.unload_PP_chain(chain):
+                print 'Cant unload pp chain:', chain
+
+        return
+
+    def apply(self):
+        self.applyGraphicsPreset()
+        self.applyVideoMode()
+        self.applyMouseSensitivity()
+        self.applyMouseInvert()
+        self._applyPendingKeyBindings()
+
+    def vmToStr(self, vm):
+        return str(vm['width']) + 'x' + str(vm['height']) + ' (' + str(vm['ratio'][0]) + ':' + str(vm['ratio'][1]) + ')'
+
+    def getDictionary(self):
+        data = {'mouse': {'sensivity': self.getMouseSensitivity(),
+                   'invert': self.getMouseInvert(),
+                   'filter': False},
+         'audio': {'sfx': self.getSfxVolume() * 100.0,
+                   'music': self.getMusicVolume() * 100.0,
+                   'quality': soOptionsGUI2.SOUND_QUALITY_HIGH},
+         'video': {'quality': self.getGraphicsPresetIndex(),
+                   'gamma': 1.0,
+                   'windowed': not self.getFullscreen(),
+                   'resolution': self.getResolution()['name'],
+                   'screen_mode': '%s:%s' % self.getAspectRatio()},
+         'resolution_list': [ (r['id'], r['name']) for r in self.getResolutionList() ],
+         'screen_modes': list(enumerate(('%s:%s' % ratio for ratio in set([ r['ratio'] for r in self.getResolutionList() ])))),
+         'keybinds': self._getKeyBindsVisualData()}
+        return data
+
+    def writePreferencesDict(self, preferences):
+        if DEBUG_PRINTS:
+            print 'Write preferences'
+        r = self.getResolution()
+        devicePreferences = {'devicePreferences/windowed': not self.getFullscreen(),
+         'devicePreferences/aspectRatio': float(r['width']) / r['height'],
+         'devicePreferences/windowedWidth': r['width'],
+         'devicePreferences/windowedHeight': r['height'],
+         'devicePreferences/fullscreenWidth': r['width'],
+         'devicePreferences/fullscreenHeight': r['height']}
+        for setting, value in devicePreferences.items():
+            writeDataSectionValue(preferences, setting, value)
+
+        preset_index = self.getGraphicsPresetIndex()
+        if preset_index != soOptionsGUI2.VIDEO_QUALITY_CUSTOM:
+            preset_name = dict(presetNamesIndexes)[preset_index]
+            preset = self.presets[preset_name]
+            for sect_name, entry in preferences['graphicsPreferences'].items():
+                if sect_name == 'entry':
+                    pref_name = entry['label'].asString
+                    if pref_name in preset:
+                        writeDataSectionValue(entry, 'activeOption', preset[pref_name])
+
+        else:
+            settings = self.__settings_dict__.get('settings')
+            for sect_name, entry in preferences['graphicsPreferences'].items():
+                if sect_name == 'entry':
+                    pref_name = entry['label'].asString
+                    if pref_name in settings:
+                        writeDataSectionValue(entry, 'activeOption', settings[pref_name])
+
+        if DEBUG_PRINTS:
+            for k, v in preferences['graphicsPreferences'].items():
+                if k == 'entry':
+                    print v._label.asString, v._activeOption.asString
+
+            for k, v in preferences['devicePreferences'].items():
+                print k, v.asString
+
+    def getAdditionOptionValue(self):
+        return self.additionalsSettings
+
+    def applyLanguage(self, language):
+        from Localization import lc
+        self.setLanguage(language)
+        self.saveSettings()
+
+        def restart_on__yes(event, data):
+            if event == MESSAGEBOX.EVENT_BTNPRESS:
+                if data['btn'] == MESSAGEBOX.BTN_YES:
+                    BigWorld.restartGame()
+
+        ask_yes_no('Settings.needRestart', lc('Settings.client.RESTART_REQUIRED'), lc('Settings.client.SETTINGS_LANGUAGE_RESTART'), callback=restart_on__yes, isSystem=True)
+
+    def GUICore_optionsEvent_Listener(self, event, data):
+        from Localization import lc
+        if event in (soOptionsGUI2.EVENT_APPLY, soOptionsGUI2.EVENT_OK):
+            if self.need_restart():
+
+                def restart_on__yes(event, data):
+                    if event == MESSAGEBOX.EVENT_BTNPRESS:
+                        if data['btn'] == MESSAGEBOX.BTN_YES:
+                            self.apply()
+                            self.saveSettings()
+                            self.updateGUI()
+                            BigWorld.restartGame()
+
+                ask_yes_no('Settings.needRestart', lc('Settings.client.RESTART_REQUIRED'), lc('Settings.client.SETTINGS_APPLIED_AFTER_RESTART'), callback=restart_on__yes, isSystem=True)
+            return
+        if event == soOptionsGUI2.EVENT_APPLY_SETTINGS:
+            self.customSettingsSata = data
+            self.apply()
+            self.saveSettings()
+            self.updateGUI()
+            if self.need_restart():
+
+                def restart_on__yes(event, data):
+                    if event == MESSAGEBOX.EVENT_BTNPRESS:
+                        if data['btn'] == MESSAGEBOX.BTN_YES:
+                            BigWorld.restartGame()
+
+                ask_yes_no('Settings.needRestart', lc('Settings.client.RESTART_REQUIRED'), lc('Settings.client.SETTINGS_APPLIED_AFTER_RESTART'), callback=restart_on__yes, isSystem=True)
+        elif event == soOptionsGUI2.EVENT_KEYBINDS_DEFAULT:
+            self._resetKeyBindings()
+        elif event == soOptionsGUI2.EVENT_KEYBINDS_CLEAR:
+            self._clearKeyBinding(data)
+        elif event == soOptionsGUI2.EVENT_OPTIONSET:
+            if data[0] == 'video':
+                if data[1] == 'resolution':
+                    self.setResolution(data[2])
+                elif data[1] == 'windowed':
+                    self.setFullscreen(not data[2])
+                    self.graphicsSettingsChanged = 1
+                elif data[1] == 'quality':
+                    self.setGraphicsPresetIndex(data[2])
+                elif data[1] == 'screen_mode':
+                    self.setAspectRatio(self.ratios[data[2]])
+            elif data[0] == 'audio':
+                if data[1] == 'sfx':
+                    self.setSfxVolume(data[2] / 100.0)
+                elif data[1] == 'music':
+                    self.setMusicVolume(data[2] / 100.0)
+            elif data[0] == 'mouse':
+                if data[1] == 'sensivity':
+                    self.setMouseSensitivity(data[2])
+                elif data[1] == 'invert':
+                    self.setMouseInvert(data[2])
+            elif data[0] == 'keybinds':
+                self.keyBindingsOptionsHandler(event, data)
+            self.updateGUI()
+
+    def unload_PP_chain(self, pp_chain):
+        return pp_chain not in BWPersonality.GUICore.getCurrentSysPPs() or BWPersonality.GUICore.delSysPPEffect(pp_chain)
+
+    def load_PP_chain(self, pp_chain):
+        return pp_chain in BWPersonality.GUICore.getCurrentSysPPs() or BWPersonality.GUICore.addSysPPEffect(pp_chain)
+
+    def updateGUI(self):
+        BWPersonality.GUICore.setOptionsData(self.getDictionary())
+
+    def registerListeners(self):
+        BWPersonality.GUICore.addListener('optionsEvent', self.GUICore_optionsEvent_Listener)
+
+    def unregisterListeners(self):
+        BWPersonality.GUICore.removeListener('optionsEvent', self.GUICore_optionsEvent_Listener)
+
+    def changeAdditionalsSettings(self, key, value):
+        oldValue = self.additionalsSettings[key]
+        if oldValue[0] != value:
+            self.graphicsSettingsChanged = True
+        self.additionalsSettings[key] = (value, oldValue[1])
+
+    def getKeybindingsDict(self):
+        return self.getSetting('keybindings')
+
+    def setKeybindingsDict(self, d):
+        return self.setSetting('keybindings', d)
+
+    def setKeybinding(self, actionName, value):
+        d = dict(self.getKeybindingsDict())
+        d[actionName] = value
+        self.setKeybindingsDict(d)
+
+    def _setKeyBind(self, action, keyN, keyCodes):
+        keyN = 0
+        kcCopy = list(keyCodes)
+        for index, keyCode in enumerate(kcCopy):
+            if keyCode in BWKeyBindings.KEY_ALIAS_CONTROL:
+                kcCopy[index] = BWKeyBindings.KEY_ALIAS_CONTROL
+            if keyCode in BWKeyBindings.KEY_ALIAS_ALT:
+                kcCopy[index] = BWKeyBindings.KEY_ALIAS_ALT
+            if keyCode in BWKeyBindings.KEY_ALIAS_SHIFT:
+                kcCopy[index] = BWKeyBindings.KEY_ALIAS_SHIFT
+            if keyCode in BWKeyBindings.KEY_ALIAS_WINDOWS:
+                kcCopy[index] = BWKeyBindings.KEY_ALIAS_WINDOWS
+
+        keyCodes = tuple(kcCopy)
+        print keyCodes
+        if self.keyBindings.actionsByName.has_key(action):
+            if self.pendingKeyBinds is None:
+                self.pendingKeyBinds = {}
+            pendingKeys = self._getPendingKeys()
+            if (keyCodes,) in pendingKeys:
+                del self.pendingKeyBinds[pendingKeys[keyCodes]]
+            self.pendingKeyBinds[action] = (keyCodes,)
+        self._applyPendingKeyBindings()
+        self.saveSettings()
+        return
+
+    def _applyPendingKeyBindings(self):
+        if self.pendingKeyBinds is None:
+            return
+        else:
+            for action in self.pendingKeyBinds:
+                if self.keyBindings.actionsByName.has_key(action):
+                    binding = self.keyBindings.actionsByName[action]
+                    binding.bindings = self.pendingKeyBinds[action]
+                    if self.keyBindings.actionsByBinding.has_key(self.pendingKeyBinds[action][0]):
+                        if not self.pendingKeyBinds.has_key(self.keyBindings.actionsByBinding[self.pendingKeyBinds[action][0]][0]):
+                            bindingName = self.keyBindings.actionsByBinding[self.pendingKeyBinds[action][0]][0]
+                            if bindingName != action:
+                                binding = self.keyBindings.actionsByName[bindingName]
+                                binding.bindings = ()
+
+            self.keyBindings.buildBindList()
+            self.pendingKeyBinds = None
+            return
+
+    def _resetKeyBindings(self):
+        self.pendingKeyBinds = None
+        defBinds = ResMgr.openSection('scripts/client/data/default_key_bindings.xml')
+        userBinds = {}
+        self.keyBindings.readInDefaultKeyBindings(defBinds)
+        self.keyBindings.buildBindList()
+        self.keyBindings.JSON_readInPreferenceKeyBindings(userBinds)
+        self.keyBindings.buildBindList()
+        self.saveSettings()
+        self.updateGUI()
+        return
+
+    def _clearKeyBinding(self, actionName):
+        if not self.keyBindings.actionsByName.has_key(actionName):
+            return
+        else:
+            if self.pendingKeyBinds is None:
+                self.pendingKeyBinds = {}
+            self.pendingKeyBinds[actionName] = ((),)
+            self.updateGUI()
+            return
+
+    def _makeKeyBinds(self):
+        keyBindings = BWKeyBindings.BWKeyBindings()
+        print keyBindings
+        defBinds = ResMgr.openSection('scripts/client/data/default_key_bindings.xml')
+        userBinds = self.getKeybindingsDict()
+        keyBindings.readInDefaultKeyBindings(defBinds)
+        keyBindings.buildBindList()
+        keyBindings.JSON_readInPreferenceKeyBindings(userBinds)
+        keyBindings.buildBindList()
+        return keyBindings
+
+    def _getPendingKeys(self):
+        data = {}
+        if self.pendingKeyBinds is None:
+            return data
+        else:
+            for action in self.pendingKeyBinds:
+                data[self.pendingKeyBinds[action]] = action
+
+            return data
+
+    def _getKeyBindsVisualData(self):
+        data = []
+        if self.keyBindings is None:
+            return data
+        else:
+            data = [None] * len(self.keyBindings.actionsByName)
+            for actionName in self.keyBindings.actionsByName:
+                actionBinding = self.keyBindings.actionsByName[actionName]
+                if self.pendingKeyBinds is not None:
+                    if self.pendingKeyBinds.has_key(actionName):
+                        keyBinds = self.pendingKeyBinds[actionName]
+                        key1Name = u''
+                        key2Name = u''
+                        if len(keyBinds) > 0:
+                            if len(keyBinds[0]) > 0:
+                                key1Name = BWKeyBindings._keyToString(keyBinds[0][0])
+                            if len(keyBinds[0]) > 1:
+                                key1Name = '{0} + {1}'.format(BWKeyBindings._keyToString(keyBinds[0][1]), key1Name)
+                        entry = [actionName,
+                         key1Name,
+                         key2Name,
+                         actionBinding.displayName,
+                         True]
+                        data[actionBinding.number] = entry
+                        continue
+                key1Name = u''
+                key2Name = u''
+                if len(actionBinding.bindings) > 0:
+                    if len(actionBinding.bindings[0]) > 0:
+                        key1Name = BWKeyBindings._keyToString(actionBinding.bindings[0][0])
+                    if len(actionBinding.bindings[0]) > 1:
+                        key1Name = '{0} + {1}'.format(BWKeyBindings._keyToString(actionBinding.bindings[0][1]), key1Name)
+                entry = [actionName,
+                 key1Name,
+                 key2Name,
+                 actionBinding.displayName,
+                 False]
+                data[actionBinding.number] = entry
+
+            return data
+
+    def initKeyBindings(self):
+        self.keyBindings = self._makeKeyBinds()
+        self.keyBindings.addHandler(BWPersonality.BWPersonalityActionHandler())
+
+    def keyBindingsOptionsHandler(self, event, data):
+        actionName = data[1]
+        keyN = data[2]
+        keyCodes = data[3]
+        self._setKeyBind(actionName, keyN, keyCodes)
+        self.updateGUI()
+
+    def __readJSON__(self):
+        settings_filepath = os.path.join(BWPersonality.GAME_DIR, SETTINGS_FILE)
+        if os.path.isfile(settings_filepath):
+            try:
+                with open(settings_filepath, 'r') as f:
+                    d = json.load(f, encoding='utf-8')
+                    for k, v in d.items():
+                        d[k] = self.filterSettingValue(k, v)
+
+                    self.__settings_dict__.update(d)
+            except IOError:
+                print 'IOError: ', SETTINGS_FILE
+            except ValueError:
+                print SETTINGS_FILE, "can't be parsed!"
+
+    def __writeJSON__(self):
+        settings_filepath = os.path.join(BWPersonality.GAME_DIR, SETTINGS_FILE)
+        names = {}
+        for pref in BigWorld.graphicsSettings():
+            names[pref[0]] = pref[1]
+
+        for k, v in self.additionalsSettings.items():
+            names[k] = v[0]
+
+        newDict = self.__settings_dict__
+        newDict['settings'] = names
+        with open(settings_filepath, 'w') as f:
+            s = json.dumps(newDict, f, sort_keys=True, indent=4, encoding='utf-8')
+            f.write(s)
+            f.flush()

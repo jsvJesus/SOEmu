@@ -1,0 +1,2 @@
+cryptography>=43.0
+PyMySQL>=1.1

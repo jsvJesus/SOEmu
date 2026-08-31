@@ -1,0 +1,1800 @@
+# Embedded file name: scripts/common/ItemsUtils.py
+import Stats
+from FiringDefs import BODY_ZONES
+from Items import ItemsCatalog
+from copy import deepcopy
+from copy import copy
+import math
+import random
+import time
+from Localization import lc
+from utils import add_dicts
+from functools import partial
+import traceback
+import BigWorld
+from DyeConstant import DyeTintIndexs, DyeTintIndexsLcTMP
+MODEL_LIST_POSITION = 0
+MODEL_HP_POSITION = 1
+MODEL_TINT_DICT_POSITION = 2
+MAX_AVATAR_ITEMS = 100
+DEFAULT_TRADER_STORAGE_SPACE = 1000
+EXCHANGE_CALLBACK_TIME = 5.0
+FAIL_NO, FAIL_ITEM_CANT_BE_ATTACHED, FAIL_ITEM_ALREADY_ATTACHED, FAIL_ATTACHING_NOT_A_PART, FAIL_MOTHER_NOT_A_WEAPON, FAIL_MOTHER_CANT_CARRY, FAIL_NOTHING_TO_REPAIR, FAIL_LOW_SKILL_LEVEL, FAIL_NO_REPAIR_KIT, FAIL_REPAIR_FAILED, FAIL_NOT_DETACHABLE, FAIL_ALREADY_DETACHED, FAIL_TRADER_NO_MONEY, FAIL_TRADER_NO_WARE, FAIL_CANT_SELL, FAIL_NO_BATTARY, FAIL_NO_MONEY, FAIL_NO_RECIPE, FAIL_NO_RESOURCE, FAIL_CRAFT_ROLL_FAIL, FAIL_ITEM_EQUIPPED, FAIL_IMPROPER_AMMO, AMMO_ALREADY_LOADED, FAIL_TRADER_NOT_BUY_IT, FAIL_ITEM_STRUCTURE, FAIL_TOO_MANY_ITEMS, CHECK_AND_CONFIRM, ITEM_BROKEN_NOT_REPAIR, FAIL_CANT_UNITE, FAIL_NO_TRADER, FAIL_PLAYER_EXCHANGE_CHANGED, FAIL_MAX_ITEMS, FAIL_NO_ITEM_HOLDER, FAIL_NOT_IN_RANGE, FAIL_CANT_TRADE, FAIL_ITEM_QUEST, FAIL_OTHER_ACTION, FAIL_KNOWN_RECIPE, FAIL_CLAN_ITEM, FAIL_CANT_MODIFY_EQUIPPED_ITEM, FAIL_NO_STORAGE_PLACE, FAIL_USED_ITEM, FAIL_OVERFLOW_SLOT, FAIL_IMPOSSIBLE_COOK, FAIL_STACK, FAIL_USER_FIRE_ACCESS, FAIL_UF_GROUND, FAIL_UF_GEOMETRY, FAIL_UF_OTHER_UF, FAIL_UF_WATER, FAIL_UF_SAFE_AREA, FAIL_CONTAINER_OFERFLOW, FAIL_CONTAINER_MAX_USE, FAIL_ARTEFACT_DEAD, FAIL_NO_WORKBRENCH = xrange(55)
+RELOAD_PISTOL, RELOAD_PISTOL_SHORT, RELOAD_AUTOGUN, RELOAD_AUTOGUN_SHORT, RELOAD_LAUNCHER, RELOAD_BREECH_SHOTGUN, RELOAD_MANUAL, RELOAD_MANUAL_SHORT, RELOAD_BULLPUP_SHORT, RELOAD_BULLPUP, RELOAD_BULLPUP_BIG_MAGAZINE, RELOAD_MACHINEGUN_BELT = xrange(12)
+FAIL_USE_TINT_OLD_TINT = 1
+FAIL_USE_TINT_NO_TINT = 2
+FAIL_USE_TINT_ALREADY = 3
+MODE_FIRE, MODE_RELOAD = xrange(2)
+TRADER_BUY, TRADER_SELL = xrange(2)
+CACHE_MODE_SAFEBOX, CACHE_MODE_CONTAIER, CACHE_MODE_USERFIRE, CACHE_MODE_WAREHOUSE = xrange(4)
+ID_CHANGE_ADDING_ITEM_ID_FUNC, ID_START_DEVIDING_FUNC, ID_START_RETURN_ITEM_FUNC = xrange(3)
+MAX_ITEMS_TO_TRADE = 50
+MAX_ITEMS_TO_EXCHANGE = 5
+PICK_UP_SOURCE_PLAYER, PICK_UP_SOURCE_EXTRACTOR, PICK_UP_SOURCE_PARTY_MEMBER, PICK_UP_PLAYER_TARGETING = xrange(4)
+DETECTOR_RANGE = 12.0
+EXTRACTION_RANGE = 6.0
+ITEMS_VISIBILITY_HEIGHT = 0.4
+AREA_ITEM_SCAN = 1
+NEW_LOOT_OWNER_SCAN = 10
+BY_FOR_GOLD = 0
+COST_CREDIT, COST_GOLD = xrange(2)
+
+class FilterItemConst:
+    PISTOL, REVOLVER, SUB_MACHINE_GUN, ASSAULT_RIFLE, SNIPER_RIFLE, RIFLE, SHOTGUN, MACHINE_GUN, GRENADE_LAUNCHER, ROCKET_LAUNCHER, GRENADE = xrange(100, 111)
+    HEAD, SHIRT, HANDS, PANTS, BOOTS, ARMOR, HAT, MASK, BACKPACK = xrange(200, 209)
+    WEAPON = ItemsCatalog.WEAPON
+    CLOTH = ItemsCatalog.CLOTH
+    ARTIFACT = ItemsCatalog.ARTIFACT
+    GADGET = ItemsCatalog.GADGET
+    BUFF = ItemsCatalog.BUFF
+    PART = ItemsCatalog.PART
+    AMMO = ItemsCatalog.AMMO
+    EXPLOSION = ItemsCatalog.EXPLOSION
+    LOOT = ItemsCatalog.LOOT
+    QUEST = ItemsCatalog.QUEST
+    LC_WEAPON = lc('ItemsUtils.common.LC_WEAPON')
+    LC_CLOTH = lc('ItemsUtils.common.LC_CLOTH')
+    LC_ARTIFACT = lc('ItemsUtils.common.LC_ARTIFACT')
+    LC_GADGET = lc('ItemsUtils.common.LC_GADGET')
+    LC_BUFF = lc('ItemsUtils.common.LC_BUFF')
+    LC_PART = lc('ItemsUtils.common.LC_PART')
+    LC_AMMO = lc('ItemsUtils.common.LC_AMMO')
+    LC_EXPLOSION = lc('ItemsUtils.common.LC_EXPLOSION')
+    LC_LOOT = lc('ItemsUtils.common.LC_LOOT')
+    LC_QUEST = lc('ItemsUtils.common.LC_QUEST')
+    LC_PISTOL = lc('ItemsUtils.common.LC_PISTOL')
+    LC_REVOLVER = lc('ItemsUtils.common.LC_REVOLVER')
+    LC_SUB_MACHINE_GUN = lc('ItemsUtils.common.LC_SUB_MACHINE_GUN')
+    LC_ASSAULT_RIFLE = lc('ItemsUtils.common.LC_ASSAULT_RIFLE')
+    LC_SNIPER_RIFLE = lc('ItemsUtils.common.LC_SNIPER_RIFLE')
+    LC_RIFLE = lc('ItemsUtils.common.LC_RIFLE')
+    LC_SHOTGUN = lc('ItemsUtils.common.LC_SHOTGUN')
+    LC_MACHINE_GUN = lc('ItemsUtils.common.LC_MACHINE_GUN')
+    LC_GRENADE_LAUNCHER = lc('ItemsUtils.common.LC_GRENADE_LAUNCHER')
+    LC_ROCKET_LAUNCHER = lc('ItemsUtils.common.LC_ROCKET_LAUNCHER')
+    LC_GRENADE = lc('ItemsUtils.common.LC_GRENADE')
+    LC_HEAD = lc('ItemsUtils.common.LC_HEAD')
+    LC_SHIRT = lc('ItemsUtils.common.LC_SHIRT')
+    LC_HANDS = lc('ItemsUtils.common.LC_HANDS')
+    LC_PANTS = lc('ItemsUtils.common.LC_PANTS')
+    LC_BOOTS = lc('ItemsUtils.common.LC_BOOTS')
+    LC_ARMOR = lc('ItemsUtils.common.LC_ARMOR')
+    LC_HAT = lc('ItemsUtils.common.LC_HAT')
+    LC_MASK = lc('ItemsUtils.common.LC_MASK')
+    LC_BACKPACK = lc('ItemsUtils.common.LC_BACKPACK')
+
+    def __getitem__(self, var):
+        return getattr(self, var)
+
+
+filterItemConst = FilterItemConst()
+
+def GenerateTransactionID():
+    return 0
+
+
+def UnlockAllEntitysItems(entity):
+    for item in entity.CarryingItems:
+        item.fromEntityID = 0
+
+
+def ItemIsEpsent(item):
+    if ItemsCatalog.GetItemParam(item['complexItemType']) == None:
+        return True
+    else:
+        return False
+
+
+def GetNumItemsInInventory(CarryingItems):
+    return len(CarryingItems)
+
+
+def GetItemDamage(entity):
+    weaponMainDamage, weaponAdditionalDamage, ammoMainDamage, ammoAdditionalDamage = ({},
+     {},
+     {},
+     {})
+
+    def DictCopy(target, source):
+        for key in source:
+            target[key] = source[key][:]
+
+    DictCopy(weaponMainDamage, unpackItemDict(entity.CurrentWeaponParam['DamageMainKeys'], entity.CurrentWeaponParam['DamageMainValues']))
+    DictCopy(weaponAdditionalDamage, unpackItemDict(entity.CurrentWeaponParam['DamageAdditionalKeys'], entity.CurrentWeaponParam['DamageAdditionalValues']))
+    DictCopy(ammoMainDamage, unpackItemDict(entity.CurrentWeaponParam['AmmoDamageMainKeys'], entity.CurrentWeaponParam['AmmoDamageMainValues']))
+    DictCopy(ammoAdditionalDamage, unpackItemDict(entity.CurrentWeaponParam['AmmoDamageAdditionalKeys'], entity.CurrentWeaponParam['AmmoDamageAdditionalValues']))
+    penetration_summary = entity.CurrentWeaponParam['Penetration']
+    for keys in ammoMainDamage.keys():
+        if weaponMainDamage.has_key(keys):
+            weaponMainDamage[keys][0] += ammoMainDamage[keys][0]
+            weaponMainDamage[keys][1] += ammoMainDamage[keys][1]
+        else:
+            weaponMainDamage[keys] = ammoMainDamage[keys]
+
+    for keys in ammoAdditionalDamage.keys():
+        if weaponAdditionalDamage.has_key(keys):
+            weaponAdditionalDamage[keys][0] += ammoAdditionalDamage[keys][0]
+            weaponAdditionalDamage[keys][1] += ammoAdditionalDamage[keys][1]
+        else:
+            weaponAdditionalDamage[keys] = ammoAdditionalDamage[keys]
+
+    return dict(penetration=penetration_summary, mainDamage=weaponMainDamage, additionalDamage=weaponAdditionalDamage)
+
+
+def GetWarnedArmorDefenceModifyer(condition):
+    if condition == 0:
+        return 0
+    return 1
+
+
+def GetArmorParamDict(entity, param_key, calc_condition = True):
+
+    def sqrt_add(mod, a, b):
+        return math.sqrt(a * a + b * b) * mod
+
+    armor_ids = []
+    param_dict = {}
+    for dict_name in ItemsCatalog.cloth_dict.values():
+        id_key = dict_name[0]
+        type_key = dict_name[1]
+        armor_id = entity.ActiveArmorSet[id_key]
+        if armor_id:
+            if entity.ActiveArmorSet[type_key]:
+                complexItemParams = ItemsCatalog.GetItemParam(entity.ActiveArmorSet[type_key])
+                if complexItemParams:
+                    curr_item_param_dict = deepcopy(complexItemParams.get(param_key, {}))
+                    if armor_id not in armor_ids:
+                        armor_ids.append(armor_id)
+                        if calc_condition:
+                            condition = GetEquippedItemCondition(entity, armor_id, complexItemParams)
+                            defence_mod = GetWarnedArmorDefenceModifyer(condition)
+                        else:
+                            defence_mod = 1.0
+                        add_dicts(param_dict, curr_item_param_dict, custom_add_function=partial(sqrt_add, defence_mod))
+
+    return param_dict
+
+
+def GetAbsorbationDict(entity):
+    pass
+
+
+def GetArmorDict(entity, calc_condition = True):
+    return GetArmorParamDict(entity, 'Defence', calc_condition)
+
+
+def GetAbsorbDict(entity, calc_condition = True):
+    return GetArmorParamDict(entity, 'Absorb', calc_condition)
+
+
+def GetArmor(entity, zone_id, calc_condition = True):
+    armor_ids, armor_params = GetArmorIDTypeParams(entity, zone_id)
+    armors_number = len(armor_ids)
+    defence_dict = {}
+    for armor_number in xrange(armors_number):
+        armor_id = armor_ids[armor_number]
+        params = armor_params[armor_number]
+        if params != None:
+            if calc_condition:
+                condition = GetEquippedItemCondition(entity, armor_id, params)
+                defence_mod = GetWarnedArmorDefenceModifyer(condition)
+            else:
+                defence_mod = 1.0
+            current_armor_defence = copy(params['Defence'][zone_id])
+            for key in current_armor_defence.keys():
+                if defence_dict.has_key(key):
+                    defence_dict[key] += (current_armor_defence[key] * defence_mod) ** 2
+                else:
+                    defence_dict[key] = (current_armor_defence[key] * defence_mod) ** 2
+
+    for key in defence_dict.keys():
+        defence_dict[key] = math.sqrt(defence_dict[key])
+
+    return defence_dict
+
+
+def GetArmorIDTypeParams(entity, zone_id):
+    armor_ids, armor_params = [], []
+    for dict_name in ItemsCatalog.cloth_dict.values():
+        id_key = dict_name[0]
+        type_key = dict_name[1]
+        armor_id = entity.ActiveArmorSet[id_key]
+        if armor_id:
+            if entity.ActiveArmorSet[type_key]:
+                complexItemParams = ItemsCatalog.GetItemParam(entity.ActiveArmorSet[type_key])
+                if complexItemParams['Defence'].has_key(zone_id):
+                    if armor_id not in armor_ids:
+                        armor_ids.append(armor_id)
+                        armor_params.append(complexItemParams)
+
+    return (armor_ids, armor_params)
+
+
+def GetSFXSilenceKoeff(sfx_param):
+    if sfx_param in ItemsCatalog.SILENCED_SFXES:
+        return 0.3
+    return 1.0
+
+
+def CanShortReload(num_current_ammo, complexItemParams):
+    if complexItemParams['LoadType'] in [ItemsCatalog.LOAD_PISTOL_MAGAZINE, ItemsCatalog.LOAD_RIFLE_MAGAZINE, ItemsCatalog.LOAD_BULLPUP_MAGAZINE]:
+        if num_current_ammo > 0:
+            return (True, True)
+        else:
+            return (False, False)
+    elif complexItemParams['LoadType'] in [ItemsCatalog.LOAD_SHOTGUN_MANUAL]:
+        if num_current_ammo > 0:
+            return (True, False)
+        else:
+            return (False, False)
+    else:
+        return (False, False)
+
+
+def GetItemReloadType(weapon_load_type, is_short_reload):
+    reload_type = 0
+    if weapon_load_type == ItemsCatalog.LOAD_PISTOL_MAGAZINE:
+        if is_short_reload:
+            reload_type = RELOAD_PISTOL_SHORT
+        else:
+            reload_type = RELOAD_PISTOL
+    elif weapon_load_type == ItemsCatalog.LOAD_RIFLE_MAGAZINE:
+        if is_short_reload:
+            reload_type = RELOAD_AUTOGUN_SHORT
+        else:
+            reload_type = RELOAD_AUTOGUN
+    elif weapon_load_type == ItemsCatalog.LOAD_BULLPUP_MAGAZINE:
+        if is_short_reload:
+            reload_type = RELOAD_BULLPUP_SHORT
+        else:
+            reload_type = RELOAD_BULLPUP
+    elif weapon_load_type == ItemsCatalog.LOAD_ROCKET_LAUNCHER:
+        reload_type = RELOAD_LAUNCHER
+    elif weapon_load_type == ItemsCatalog.LOAD_BREECH_SHOTGUN:
+        reload_type = RELOAD_BREECH_SHOTGUN
+    elif weapon_load_type == ItemsCatalog.LOAD_MACHINEGUN_BELT:
+        reload_type = RELOAD_MACHINEGUN_BELT
+    elif weapon_load_type == ItemsCatalog.LOAD_BULLPUP_BIG_MAGAZINE:
+        reload_type = RELOAD_BULLPUP_BIG_MAGAZINE
+    elif weapon_load_type == ItemsCatalog.LOAD_SHOTGUN_MANUAL:
+        if is_short_reload:
+            reload_type = RELOAD_MANUAL_SHORT
+        else:
+            reload_type = RELOAD_MANUAL
+    return reload_type
+
+
+def CanLoadAmmo(entity, id):
+    if entity.ActiveItemID:
+        attachingItem = GetComplexItemByID(entity, id)
+        attachingItemType = attachingItem['complexItemType']
+        attaching_item_class = ItemsCatalog.GetItemClass(attachingItemType)
+        if attaching_item_class == ItemsCatalog.AMMO:
+            motherItemParam = ItemsCatalog.GetItemParam(entity.ActiveItemType)
+            attachingItemParam = ItemsCatalog.GetItemParam(attachingItemType)
+            if attachingItemParam['AmmoType'] == motherItemParam['AmmoType']:
+                if entity.ActiveItemAmmoType != attachingItemType:
+                    return FAIL_NO
+                else:
+                    return AMMO_ALREADY_LOADED
+            else:
+                return FAIL_IMPROPER_AMMO
+    else:
+        return FAIL_MOTHER_NOT_A_WEAPON
+
+
+def CheckItemClan(entity, item_params, get_clan_func):
+    if item_params == None:
+        return False
+    elif item_params.has_key('ClanID'):
+        item_clan_id = item_params['ClanID']
+        if not isinstance(item_clan_id, list):
+            item_clan_id = [item_clan_id]
+        carrier_clan_id = get_clan_func()
+        if carrier_clan_id in item_clan_id:
+            if entity.canUseClanItems():
+                return False
+        return True
+    else:
+        return False
+
+
+def SetItemPersonal(complexItemType, item_params = None):
+    if item_params is None:
+        item_params = ItemsCatalog.GetItemParam(complexItemType)
+    return item_params.get('PersonalItem', 0)
+
+
+def GetItemTTL(complexItemType, item_params = None):
+    if item_params is None:
+        item_params = ItemsCatalog.GetItemParam(complexItemType)
+    if item_params is None:
+        print 'Unknown item type: ', complexItemType
+        return
+    else:
+        return item_params.get('TTL')
+
+
+def IsItemEquipable(complexItemType, item_params = None):
+    if item_params is None:
+        item_params = ItemsCatalog.GetItemParam(complexItemType)
+    return item_params.get('Equipable', 0)
+
+
+def IsItemMoveable(item, item_inconstant_param = None):
+    return IsQuestItem(item, item_inconstant_param) or IsPersonalItem(item, item_inconstant_param)
+
+
+def IsQuestItem(item, item_inconstant_param = None):
+    return GetQuestItemID(item, item_inconstant_param) > 0
+
+
+def IsPersonalItem(item, item_inconstant_param = None):
+    result = False
+    for sub_item in item['itemList']:
+        params = GetSubItemInconstanParams(sub_item)
+        result = params.get(ItemsCatalog.INC_PERSONAL_ITEM, False) or result
+
+    if not item_inconstant_param:
+        item_inconstant_param = GetComplexItemInconstanParams(item)
+    return item_inconstant_param.get(ItemsCatalog.INC_PERSONAL_ITEM, False) or result
+
+
+def GetQuestItemID(item, item_inconstant_param = None):
+    if not item_inconstant_param:
+        item_inconstant_param = GetComplexItemInconstanParams(item)
+    if item_inconstant_param.has_key(ItemsCatalog.IS_QUEST_ITEM):
+        return item_inconstant_param[ItemsCatalog.IS_QUEST_ITEM]
+    else:
+        return False
+
+
+def CheckQuestItem(quest_ID, item, item_inconstant_param = None):
+    return GetQuestItemID(item, item_inconstant_param) == quest_ID
+
+
+def GetIconName(item, item_type = None):
+    if item_type == None:
+        item_type = item['complexItemType']
+    return ItemsCatalog.GetItemParam(item_type)['IconName']
+
+
+def GetDurabilityCoef(item_condition):
+    if item_condition < 0.19:
+        return 0.2
+    elif item_condition < 0.29:
+        return 0.16
+    elif item_condition < 0.49:
+        return 0.08
+    elif item_condition < 0.59:
+        return 0.06
+    elif item_condition < 0.69:
+        return 0.05
+    else:
+        return 0
+
+
+def GetItemDescription(item_type):
+    if item_type > 0:
+        item_str = lc('ItemsDescription.ITEM_DESCRIPTION_TYPE' + str(item_type))
+        return item_str
+    else:
+        return lc('ItemsUtils.common.NO_DESCRIPTION')
+
+
+def GetItemName(item_type, fGetShortName = False, utf8 = False, tintItem = None):
+    postfix = ''
+    if tintItem:
+        postfix = GetTintLocalizName(tintItem).encode('utf8')
+    if item_type > 0:
+        item_str = lc('ItemsNames.ITEM_NAME_TYPE' + str(item_type), utf8=utf8)
+    else:
+        return lc('ItemsUtils.common.VOID_ITEM', utf8=utf8)
+    try:
+        delimeter_index = item_str.index(u'|')
+        if fGetShortName:
+            return item_str[0:delimeter_index] + postfix
+        return item_str[delimeter_index + 1:] + postfix
+    except ValueError:
+        return item_str + postfix
+
+
+def CanItemBeRepaired(entity, item):
+    item_type = item['complexItemType']
+    item_class = ItemsCatalog.GetItemClass(item_type)
+    if item_class in [ItemsCatalog.CLOTH, ItemsCatalog.WEAPON]:
+        item_params = ItemsCatalog.GetItemParam(item_type)
+        params = GetComplexItemInconstanParams(item, entity)
+        if params == None or item_params == None:
+            return FAIL_NOTHING_TO_REPAIR
+        if GetItemCurrentMaxCondition(params[ItemsCatalog.INC_REPAIRS_NUMBER] + 1, item_params) > params[ItemsCatalog.INC_CONDITION_VALUE]:
+            return
+        return ITEM_BROKEN_NOT_REPAIR
+    else:
+        return FAIL_NOTHING_TO_REPAIR
+
+
+def GetRepairCost(item, entity, trader = None):
+    itemParam = ItemsCatalog.GetItemParam(item['complexItemType'])
+    if itemParam.has_key('Cost'):
+        item_class = ItemsCatalog.GetItemClass(item['complexItemType'])
+        if item_class == ItemsCatalog.CLOTH or item_class == ItemsCatalog.WEAPON:
+            item_cost = itemParam['Cost']
+            param = GetComplexItemInconstanParams(item, entity)
+            item_max_condition = float(itemParam['MaxCondition'])
+            discount = float(param[ItemsCatalog.INC_CONDITION_VALUE]) / item_max_condition
+            repair_cost = item_cost - item_cost * discount
+            repair_cost *= ItemsCatalog.NPC_REPAIR_DISCOUNT
+            if trader:
+                margin_cost = repair_cost * trader.pMarginSell
+            else:
+                margin_cost = 0.0
+            end_cost = repair_cost + margin_cost
+            return (int(end_cost), int(margin_cost))
+    return (None, None)
+
+
+def GetBankEntry(entity, trader_name):
+    for entry in entity.StoredItems:
+        if entry.TraderName == trader_name:
+            return entry
+
+
+def GetWearedItemsTypesTints(entity):
+    equip_list = []
+    for key in ItemsCatalog.cloth_dict.keys():
+        item_id = entity.ActiveArmorSet[ItemsCatalog.cloth_dict[key][0]]
+        item = GetComplexItemByID(entity, item_id)
+        item_inc_param = GetComplexItemInconstanParams(item)
+        equip_list.append((item['complexItemID'], item_inc_param[ItemsCatalog.ARMOR_TINT_TYPE]))
+
+    return equip_list
+
+
+def getModelNameByItemType(itemType, item_params = None):
+    if item_params is None:
+        item_params = ItemsCatalog.GetItemParam(itemType)
+    if item_params:
+        models_lsit = item_params['ModelNames'].values()
+        if len(models_lsit) == 1:
+            return models_lsit[0]
+        return models_lsit
+        return
+    else:
+        return
+        return
+
+
+def IsItemEquipped(entity, id):
+    equip_list = GetEquipListIDs(entity)
+    if id in equip_list:
+        return True
+    return False
+
+
+def GetEquipListTypes(entity):
+    equip_list = []
+    for key in ItemsCatalog.cloth_dict.keys():
+        equip_list.append(entity.ActiveArmorSet[ItemsCatalog.cloth_dict[key][1]])
+
+    return equip_list
+
+
+def GetEquipListIDs(entity):
+    equip_list = []
+    equip_list.append(entity.ActiveGrenadeID)
+    for key in ItemsCatalog.cloth_dict.keys():
+        equip_list.append(entity.ActiveArmorSet[ItemsCatalog.cloth_dict[key][0]])
+
+    equip_list.append(entity.ActiveWeaponSet['MeleeSlotID'])
+    equip_list.append(entity.ActiveWeaponSet['PrimarySlotID'])
+    equip_list.append(entity.ActiveWeaponSet['SecondarySlotID'])
+    for artifact in entity.ActiveArtifactList:
+        equip_list.append(artifact['ArtifactID'])
+
+    equip_list.append(entity.ActiveGadjetSet['GadjetID'])
+    equip_list = set(equip_list)
+    return equip_list
+
+
+def GetItemQuanity(container, itemType, void_quest_both = ItemsCatalog.ITEM_TYPE_VOID):
+    item_class = ItemsCatalog.GetItemClass(itemType)
+    quanity = 0
+    for item in container:
+        if item['complexItemType'] == itemType:
+            param = GetComplexItemInconstanParams(item)
+            if void_quest_both == ItemsCatalog.ITEM_TYPE_VOID:
+                if IsQuestItem(None, param):
+                    continue
+            elif not CheckQuestItem(void_quest_both, None, param):
+                continue
+            if item_class in [ItemsCatalog.AMMO, ItemsCatalog.EXPLOSION]:
+                quanity += param[ItemsCatalog.INC_ROUND_NUMBER]
+            elif item_class in [ItemsCatalog.LOOT]:
+                quanity += param[ItemsCatalog.INC_WARE_NUMBER]
+            else:
+                quanity += 1
+        ItemParam = ItemsCatalog.GetItemParam(item['complexItemType'])
+        if ItemParam.get('IsArtefactContainer', 0):
+            for subItem in item['itemList']:
+                if subItem['itemType'] == itemType:
+                    quanity += 1
+
+    return quanity
+
+
+def CheckArmorValidityClient(entity):
+    for key in ItemsCatalog.cloth_dict.keys():
+        if entity.ActiveArmorSet[ItemsCatalog.cloth_dict[key][0]]:
+            if not entity.ActiveArmorSet[ItemsCatalog.cloth_dict[key][1]]:
+                entity.ActiveArmorSet[ItemsCatalog.cloth_dict[key][0]] = 0
+                traceback.print_stack()
+                entity.cell.wipeItem(ItemsCatalog.cloth_dict[key][0])
+
+
+def CheckArmorValidityCell(entity):
+    for key in ItemsCatalog.cloth_dict.keys():
+        if entity.ActiveArmorSet[ItemsCatalog.cloth_dict[key][0]]:
+            if not entity.ActiveArmorSet[ItemsCatalog.cloth_dict[key][1]] or not GetComplexItemByID(entity, entity.ActiveArmorSet[ItemsCatalog.cloth_dict[key][0]]):
+                entity.ActiveArmorSet[ItemsCatalog.cloth_dict[key][0]] = 0
+                SearchIDinEquipsAndSetToZero(entity, ItemsCatalog.cloth_dict[key][0])
+
+
+def SearchIDinEquipsAndSetToZero(entity, itemID, fWebAction = False):
+
+    def getentityatr(name):
+        if fWebAction:
+            return entity[name]
+        else:
+            return getattr(entity, name)
+
+    def setentityatr(name, value):
+        if fWebAction:
+            entity[name] = value
+        else:
+            setattr(entity, name, value)
+
+    if itemID == getentityatr('ActiveItemID'):
+        if fWebAction:
+            entity['ActiveItemID'] = itemID
+            entity['ActiveItemType'] = itemType
+        else:
+            entity.setActiveItem(0, 0, 0)
+    attribute = getentityatr('ActiveGrenadeID')
+    if itemID == attribute:
+        setentityatr('ActiveGrenadeID', 0)
+    if itemID == getentityatr('ActiveWeaponSet')['SecondarySlotID']:
+        attr = getentityatr('SecondaryWeaponUpgrades')
+        for key in attr.keys():
+            attr[key] = 0
+
+        setentityatr('SecondaryWeaponUpgrades', attr)
+    elif itemID == getentityatr('ActiveWeaponSet')['PrimarySlotID']:
+        attr = getentityatr('PrimaryWeaponUpgrades')
+        for key in attr.keys():
+            attr[key] = 0
+
+        setentityatr('PrimaryWeaponUpgrades', attr)
+    attr = getentityatr('ActiveArmorSet')
+    for key in attr.keys():
+        if attr[key] == itemID:
+            attr[key] = 0
+
+    setentityatr('ActiveArmorSet', attr)
+    attr = getentityatr('ActiveWeaponSet')
+    for key in attr.keys():
+        if attr[key] == itemID:
+            attr[key] = 0
+
+    setentityatr('ActiveWeaponSet', attr)
+    attr = getentityatr('ActiveGadjetSet')
+    for key in attr.keys():
+        if attr[key] == itemID:
+            attr[key] = 0
+
+    setentityatr('ActiveGadjetSet', attr)
+    attr = getentityatr('ActiveArtifactList')
+    for index, artifact in enumerate(attr):
+        if itemID == artifact['ArtifactID']:
+            attr.pop(index)
+            break
+
+    setentityatr('ActiveArtifactList', attr)
+
+
+def ItemHolderDeleteItem(entity, complexItemID, index_is_known = False, known_index = 0, fWebAction = False):
+
+    def GetIndex():
+        for index, item in enumerate(carrying_items):
+            if item['complexItemID'] == complexItemID:
+                return index
+
+    SearchIDinEquipsAndSetToZero(entity, complexItemID, fWebAction)
+    fItemDeleted = False
+    item = None
+    deletingIndex = 0
+    if fWebAction:
+        carrying_items = entity['CarryingItems']
+    else:
+        carrying_items = entity.CarryingItems
+    if index_is_known:
+        deletingIndex = known_index
+    else:
+        deletingIndex = GetIndex()
+    if deletingIndex is not None:
+        try:
+            item = carrying_items[deletingIndex]
+            carrying_items.pop(deletingIndex)
+            fItemDeleted = True
+        except IndexError:
+            print 'Index error while deleting item id:', complexItemID, ' index= ', deletingIndex
+            deletingIndex = GetIndex()
+            try:
+                carrying_items.pop(deletingIndex)
+                fItemDeleted = True
+            except IndexError:
+                print 'Double Index error while deleting item id:', complexItemID, ' index= ', deletingIndex
+
+    return (fItemDeleted, item)
+
+
+def MoveComplexItemToItem(entity, motherItem, attachingItem, isContainer = False):
+    newitem = {}
+    newitem['itemType'] = attachingItem['complexItemType']
+    newitem['itemID'] = attachingItem['complexItemID']
+    newitem['creationTime'] = attachingItem['creationTime']
+    if isContainer:
+        attaching_inc_param = GetComplexItemInconstanParams(attachingItem)
+        attaching_inc_param[ItemsCatalog.INC_ARTEFACT_TIME_DELTA] = int(time.time() - attachingItem['creationTime'])
+        SetComplexItemInconstanParams(attachingItem, attaching_inc_param)
+    newitem['itemParametresKeys'] = attachingItem['complexItemParametresKeys']
+    newitem['itemParametresValues'] = attachingItem['complexItemParametresValues']
+    motherItem['itemList'].append(newitem)
+    for index in xrange(len(entity.CarryingItems)):
+        if attachingItem['complexItemID'] == entity.CarryingItems[index]['complexItemID']:
+            entity.CarryingItems.pop(index)
+            if isContainer:
+                entity.CheckItemEffectChanges(attachingItem, 'DropEffect')
+            return
+
+    print 'cant delete item'
+
+
+def DeleteSubItem(entity, item, sub_item_id):
+    for index in xrange(len(item['itemList'])):
+        if sub_item_id == item['itemList'][index]['itemID']:
+            item['itemList'].pop(index)
+            return True
+
+    return False
+
+
+def RemoveItemFromComplexItem(entity, motherItem, detaching_item, createArtefactFromContainer = False):
+    newitem = ConvertSubItemToItem(detaching_item, createArtefactFromContainer)
+    entity.CarryingItems.append(newitem)
+    DeleteSubItem(entity, motherItem, detaching_item['itemID'])
+
+
+def ConvertSubItemToItem(sub_item, createArtefactFromContainer = False):
+    newitem = {}
+    newitem['complexItemType'] = sub_item['itemType']
+    newitem['complexItemID'] = sub_item['itemID']
+    newitem['fromEntityID'] = 0
+    newitem['creationTime'] = sub_item['creationTime']
+    newitem['complexItemParametresKeys'] = sub_item['itemParametresKeys']
+    newitem['complexItemParametresValues'] = sub_item['itemParametresValues']
+    newitem['itemList'] = []
+    if createArtefactFromContainer:
+        newitem['creationTime'] = time.time()
+        inc_param = GetComplexItemInconstanParams(newitem)
+        newitem['creationTime'] = time.time() - inc_param.get(ItemsCatalog.INC_ARTEFACT_TIME_DELTA, 0)
+    return newitem
+
+
+def GetFiryingItemSFXParams(entity):
+    if entity.ActiveItemType == 0:
+        return 0
+    complexItemParams = ItemsCatalog.GetItemParam(entity.ActiveItemType)
+    gun_type = complexItemParams['GunType']
+    gun_priority = GetWeaponPriority(gun_type)
+    if gun_priority == ItemsCatalog.SECONDARY:
+        upgrade_dict = entity.SecondaryWeaponUpgrades
+    else:
+        upgrade_dict = entity.PrimaryWeaponUpgrades
+    silencer_id = upgrade_dict['SilencerType']
+    if silencer_id > 0:
+        complexItemParams = ItemsCatalog.GetItemParam(silencer_id)
+    return GetItemSFXParams(complexItemParams)
+
+
+def GetItemSFXParams(param):
+    if param:
+        return param['SFX']
+
+
+def GetWeaponAmmoCapacity(entity, item_param):
+    gun_type = item_param['GunType']
+    gun_priority = GetWeaponPriority(gun_type)
+    if gun_priority == ItemsCatalog.SECONDARY:
+        upgrade_dict = entity.SecondaryWeaponUpgrades
+    else:
+        upgrade_dict = entity.PrimaryWeaponUpgrades
+    if upgrade_dict.MagazineType > 0:
+        magazine_param = ItemsCatalog.GetItemParam(upgrade_dict.MagazineType)
+        if magazine_param:
+            return magazine_param['AmmoCapacity']
+        print 'Avatar ', entity.name.encode('utf-8'), ' Has magazine installed on his weapon, that has no parametrises. MagazineItemType:', upgrade_dict.MagazineType, 'Weapon Type', item_param['TypeID']
+    else:
+        return item_param['AmmoCapacity']
+
+
+def getTintID(item):
+    weaponInconstantParam = GetComplexItemInconstanParams(item)
+    return weaponInconstantParam.get(ItemsCatalog.INC_WEAPON_TINTID, 0)
+
+
+def getTextureByTint(item):
+    tintname = getTintName(item)
+    if not tintname:
+        return None
+    else:
+        weapon_param = ItemsCatalog.GetItemParam(item['complexItemType'])
+        TintsNames = weapon_param.get('TintsNames', {})
+        return TintsNames.get(tintname, None)
+
+
+def getTintName(item):
+    idd = getTintID(item)
+    return getTintNameByID(idd)
+
+
+def GetTintLocalizName(item):
+    idd = getTintID(item)
+    return DyeTintIndexsLcTMP.get(getTintNameByID(idd), u'')
+
+
+def getTintNameByID(idd):
+    for name, dyeId in DyeTintIndexs.items():
+        if idd == dyeId:
+            return name
+
+
+def canUseDyeTint(itemWeapon, itemTint):
+    itemWeaponType = itemWeapon['complexItemType']
+    itemWeaponClass = ItemsCatalog.GetItemClass(itemWeaponType)
+    if itemWeaponClass != ItemsCatalog.WEAPON:
+        return (False, 0)
+    newTintIndex = getTintIDFromDye(itemTint)
+    oldweaponTindnewTintIndex = getTintID(itemWeapon)
+    if newTintIndex is None:
+        return (False, 0)
+    tintName = getTintNameByID(newTintIndex)
+    if not tintName:
+        return (False, 0)
+    elif tintName == 'default':
+        return (True, 0)
+    weapon_param = ItemsCatalog.GetItemParam(itemWeaponType)
+    tintsCanUseModel = weapon_param.get('TintsNames', {}).keys()
+    if tintName in tintsCanUseModel:
+        if oldweaponTindnewTintIndex and newTintIndex != DyeTintIndexs['default']:
+            return (True, FAIL_USE_TINT_OLD_TINT)
+        return (True, 0)
+    else:
+        return (True, FAIL_USE_TINT_NO_TINT)
+
+
+def getTintIDFromDye(itemTint):
+    itemTint_param = ItemsCatalog.GetItemParam(itemTint['complexItemType'])
+    return itemTint_param.get('DyeTintIndex', None)
+
+
+def useDyeTint(entity, itemWeapon, itemTint):
+    itemWeaponType = itemWeapon['complexItemType']
+    tintid = getTintIDFromDye(itemTint)
+    weaponInconstantParam = GetComplexItemInconstanParams(itemWeapon)
+    print 'useDyeTint', itemWeaponType, weaponInconstantParam.get(ItemsCatalog.INC_WEAPON_TINTID), '->', tintid
+    weaponInconstantParam[ItemsCatalog.INC_WEAPON_TINTID] = tintid
+    entity.SetComplexItemInconstanParams(itemWeapon, weaponInconstantParam)
+    entity.DeleteComplexItem(itemTint['complexItemID'], comment='useDyeTint')
+
+
+def addStabToArtefactContainer(entity, containerItem, stabItem):
+    if not CanAddStabToArtefactContainer(entity, containerItem, stabItem):
+        return (0, FAIL_ITEM_CANT_BE_ATTACHED)
+    stabType = stabItem['complexItemType']
+    containerItemType = containerItem['complexItemType']
+    containerParam = ItemsCatalog.GetItemParam(containerItemType)
+    containerInconstantParam = GetComplexItemInconstanParams(containerItem)
+    stabInconstantParam = GetComplexItemInconstanParams(stabItem)
+    max_use = containerParam['MaxUseArtefact']
+    number_use = containerInconstantParam.get(ItemsCatalog.INC_USES_CONTAINER_NUMBER, 0)
+    count_stab = stabInconstantParam[ItemsCatalog.INC_WARE_NUMBER]
+    if not number_use:
+        return FAIL_NOTHING_TO_REPAIR
+    if count_stab <= 1:
+        entity.DeleteComplexItem(stabItem['complexItemID'], comment='addStabToArtefactContainer')
+    else:
+        stabInconstantParam[ItemsCatalog.INC_WARE_NUMBER] -= 1
+        entity.SetComplexItemInconstanParams(stabItem, stabInconstantParam)
+    containerInconstantParam[ItemsCatalog.INC_USES_CONTAINER_NUMBER] = 0
+    entity.SetComplexItemInconstanParams(containerItem, containerInconstantParam)
+    return FAIL_NO
+
+
+def CanAddStabToArtefactContainer(entity, motherItem, attachingItem):
+    attachingItemType = attachingItem['complexItemType']
+    motherItemType = motherItem['complexItemType']
+    attaching_item_class = ItemsCatalog.GetItemClass(attachingItemType)
+    mother_item_class = ItemsCatalog.GetItemClass(motherItemType)
+    if attaching_item_class != ItemsCatalog.LOOT or mother_item_class != ItemsCatalog.BUFF:
+        return False
+    motherItemParam = ItemsCatalog.GetItemParam(motherItemType)
+    attachingItemParam = ItemsCatalog.GetItemParam(attachingItemType)
+    if 'IsArtefactContainer' not in motherItemParam or not motherItemParam['IsArtefactContainer']:
+        return False
+    if 'ForArefContainerStable' not in attachingItemParam or not attachingItemParam['ForArefContainerStable']:
+        return False
+    return True
+
+
+def CanAttachItem(entity, motherItem, attachingItem, check_equipped = False):
+    error_level = FAIL_NO
+    attachingItemType = attachingItem['complexItemType']
+    motherItemType = motherItem['complexItemType']
+    attaching_item_class = ItemsCatalog.GetItemClass(attachingItemType)
+    mother_item_class = ItemsCatalog.GetItemClass(motherItemType)
+    if not check_equipped:
+        if IsItemEquipped(entity, motherItem['complexItemID']):
+            error_level = FAIL_CANT_MODIFY_EQUIPPED_ITEM
+            return (False, 0, error_level)
+    if attaching_item_class == ItemsCatalog.ARTIFACT and mother_item_class == ItemsCatalog.BUFF:
+        if 'complexItemID' not in dict(attachingItem):
+            return (True, 0, error_level)
+        inconstantParamArtefact = GetComplexItemInconstanParams(attachingItem)
+        if inconstantParamArtefact.get(ItemsCatalog.INC_ARTEFACT_DEAD, 0):
+            return (False, 0, FAIL_ARTEFACT_DEAD)
+        motherItemParam = ItemsCatalog.GetItemParam(motherItemType)
+        if 'IsArtefactContainer' in motherItemParam and motherItemParam['IsArtefactContainer']:
+            return (True, 0, error_level)
+    if attaching_item_class == ItemsCatalog.PART:
+        mother_item_class = ItemsCatalog.GetItemClass(motherItemType)
+        if mother_item_class == ItemsCatalog.WEAPON:
+            motherItemParam = ItemsCatalog.GetItemParam(motherItemType)
+            attachingItemParam = ItemsCatalog.GetItemParam(attachingItemType)
+            if attachingItemType in motherItemParam['PartsCanUse']:
+                return (True, attachingItemParam['PartType'], error_level)
+            error_level = FAIL_MOTHER_CANT_CARRY
+        else:
+            error_level = FAIL_MOTHER_NOT_A_WEAPON
+    else:
+        error_level = FAIL_ATTACHING_NOT_A_PART
+    return (False, 0, error_level)
+
+
+def CanUseGadjet(entity, type):
+    if entity.ActiveGadjetSet.GadjetWork:
+        if entity.ActiveGadjetSet.GadjetType == type:
+            return True
+    return False
+
+
+def AttachItem(entity, motherItem, attachingItem):
+    can_attach, part_type, error_level = CanAttachItem(entity, motherItem, attachingItem)
+    if can_attach:
+        motherItemInconstantParam = GetComplexItemInconstanParams(motherItem)
+        motherItemType = motherItem['complexItemType']
+        if ItemsCatalog.GetItemClass(motherItemType) == ItemsCatalog.BUFF:
+            motherItemParam = ItemsCatalog.GetItemParam(motherItemType)
+            if len(motherItem['itemList']) < motherItemParam['MaxArtefact']:
+                num_uses = motherItemInconstantParam.get(ItemsCatalog.INC_USES_CONTAINER_NUMBER, 0)
+                if num_uses >= motherItemParam['MaxUseArtefact']:
+                    return FAIL_CONTAINER_MAX_USE
+                motherItemInconstantParam[ItemsCatalog.INC_USES_CONTAINER_NUMBER] = num_uses + 1
+                MoveComplexItemToItem(entity, motherItem, attachingItem, True)
+                SetComplexItemInconstanParams(motherItem, motherItemInconstantParam)
+                return FAIL_NO
+            return FAIL_CONTAINER_OFERFLOW
+        else:
+            param_index = ItemsCatalog.upadate_type_inc_param[part_type]
+            if not motherItemInconstantParam[param_index]:
+                motherItemInconstantParam[param_index] = attachingItem['complexItemID']
+                MoveComplexItemToItem(entity, motherItem, attachingItem)
+                SetComplexItemInconstanParams(motherItem, motherItemInconstantParam)
+                return FAIL_NO
+            return FAIL_ITEM_ALREADY_ATTACHED
+    return error_level
+
+
+def GetItemConditionPercentString(entity, item, percent_only = True, item_param = None, item_inconstant_param = None):
+    if not item_inconstant_param:
+        item_inconstant_param = GetComplexItemInconstanParams(item, entity)
+    if not item_param:
+        item_type = item['complexItemType']
+        item_param = ItemsCatalog.GetItemParam(item_type)
+        item_class = ItemsCatalog.GetItemClass(item_type)
+        if item_class not in [ItemsCatalog.CLOTH, ItemsCatalog.WEAPON]:
+            return ''
+    item_condition = item_inconstant_param[ItemsCatalog.INC_CONDITION_VALUE]
+    item_max_condition = GetItemCurrentMaxCondition(item_inconstant_param[ItemsCatalog.INC_REPAIRS_NUMBER], item_param)
+    if percent_only:
+        string = str(int(round(item_condition / item_max_condition * ItemsCatalog.PERCENT_MODIFYER, 0))) + '%'
+    else:
+        string = str(item_condition) + '/' + str(int(item_max_condition)) + ' (' + str(round(item_condition / item_max_condition * ItemsCatalog.PERCENT_MODIFYER, 1)) + u'%)'
+    return string
+
+
+def GetItemConditionPercent(entity, item, item_param = None, item_inconstant_param = None):
+    if not item_inconstant_param:
+        item_inconstant_param = GetComplexItemInconstanParams(item, entity)
+    if not item_inconstant_param.has_key(ItemsCatalog.INC_CONDITION_VALUE) or not item_inconstant_param.has_key(ItemsCatalog.INC_REPAIRS_NUMBER):
+        return 1.0
+    if not item_param:
+        item_type = item['complexItemType']
+        item_param = ItemsCatalog.GetItemParam(item_type)
+        item_class = ItemsCatalog.GetItemClass(item_type)
+        if item_class not in [ItemsCatalog.CLOTH, ItemsCatalog.WEAPON]:
+            return 1.0
+    item_condition = item_inconstant_param[ItemsCatalog.INC_CONDITION_VALUE]
+    item_max_condition = GetItemCurrentMaxCondition(item_inconstant_param[ItemsCatalog.INC_REPAIRS_NUMBER], item_param)
+    return round(item_condition / item_max_condition, 0)
+
+
+def DetachItem(entity, motherItem, detaching_item):
+    if not motherItem or not detaching_item:
+        return FAIL_ITEM_STRUCTURE
+    detaching_item_param = ItemsCatalog.GetItemParam(detaching_item['itemType'])
+    item_class = ItemsCatalog.GetItemClass(detaching_item['itemType'])
+    motherItemType = motherItem['complexItemType']
+    if item_class == ItemsCatalog.ARTIFACT and ItemsCatalog.GetItemClass(motherItemType) == ItemsCatalog.BUFF:
+        motherItemParam = ItemsCatalog.GetItemParam(motherItemType)
+        if 'IsArtefactContainer' in motherItemParam and motherItemParam['IsArtefactContainer']:
+            motherItemInconstantParam = GetComplexItemInconstanParams(motherItem)
+            num_uses = motherItemInconstantParam.get(ItemsCatalog.INC_USES_CONTAINER_NUMBER, 0)
+            max_uses = motherItemParam['MaxUseArtefact']
+            motherItemInconstantParam[ItemsCatalog.INC_USES_CONTAINER_NUMBER] = num_uses + 1
+            if motherItemInconstantParam[ItemsCatalog.INC_USES_CONTAINER_NUMBER] > max_uses:
+                motherItemInconstantParam[ItemsCatalog.INC_USES_CONTAINER_NUMBER] = max_uses
+            RemoveItemFromComplexItem(entity, motherItem, detaching_item, True)
+            SetComplexItemInconstanParams(motherItem, motherItemInconstantParam)
+            return FAIL_NO
+    if item_class == ItemsCatalog.PART:
+        if detaching_item_param['CanDetach'] > 0:
+            part_type = detaching_item_param['PartType']
+            motherItemInconstantParam = GetComplexItemInconstanParams(motherItem)
+            param_index = ItemsCatalog.upadate_type_inc_param[part_type]
+            if motherItemInconstantParam[param_index]:
+                motherItemInconstantParam[param_index] = 0
+                RemoveItemFromComplexItem(entity, motherItem, detaching_item)
+                SetComplexItemInconstanParams(motherItem, motherItemInconstantParam)
+                if IsItemEquipped(entity, motherItem['complexItemID']):
+                    SetActiveWeaponUpgradesTypes(entity, motherItem)
+                return FAIL_NO
+            else:
+                return FAIL_ALREADY_DETACHED
+    return FAIL_NOT_DETACHABLE
+
+
+def InsertAmmo(entity, motherItem, attachingItem):
+    if entity.ActiveItemID:
+        attachingItemType = attachingItem['complexItemType']
+        attaching_item_class = ItemsCatalog.GetItemClass(attachingItemType)
+        if attaching_item_class == ItemsCatalog.AMMO:
+            motherItemParam = ItemsCatalog.GetItemParam(entity.ActiveItemType)
+            attachingItemParam = ItemsCatalog.GetItemParam(attachingItemType)
+            if attachingItemParam['AmmoType'] == motherItemParam['AmmoType']:
+                if entity.ActiveItemAmmoType != attachingItemType:
+                    entity.DischargeActiveWeapon()
+                    entity.ActiveItemAmmoType = attachingItemType
+                    reload_results = entity.ItemReload()
+                    return (FAIL_NO, reload_results)
+                else:
+                    return (AMMO_ALREADY_LOADED, None)
+            else:
+                return (FAIL_IMPROPER_AMMO, None)
+    else:
+        return (FAIL_MOTHER_NOT_A_WEAPON, None)
+    return None
+
+
+def SetActiveWeaponUpgradesTypes(entity, item):
+    if item is None:
+        return
+    else:
+        item_inconstant_param = GetComplexItemInconstanParams(item)
+        weapon_type = ItemsCatalog.GetItemParam(item['complexItemType'])['GunType']
+        for upgrade in ItemsCatalog.weapon_upgrades_dict.keys():
+            curr_upgrade_id = item_inconstant_param[upgrade]
+            if curr_upgrade_id > 0:
+                if upgrade == ItemsCatalog.INC_LOADED_MUNITION_TYPE:
+                    gun_priority = GetWeaponPriority(weapon_type)
+                    if gun_priority == ItemsCatalog.SECONDARY:
+                        entity.SecondaryWeaponUpgrades[ItemsCatalog.weapon_upgrades_dict[upgrade]] = curr_upgrade_id
+                    else:
+                        entity.PrimaryWeaponUpgrades[ItemsCatalog.weapon_upgrades_dict[upgrade]] = curr_upgrade_id
+                else:
+                    for sub_item in item['itemList']:
+                        if sub_item['itemID'] == curr_upgrade_id:
+                            gun_priority = GetWeaponPriority(weapon_type)
+                            if gun_priority == ItemsCatalog.SECONDARY:
+                                entity.SecondaryWeaponUpgrades[ItemsCatalog.weapon_upgrades_dict[upgrade]] = sub_item['itemType']
+                            else:
+                                entity.PrimaryWeaponUpgrades[ItemsCatalog.weapon_upgrades_dict[upgrade]] = sub_item['itemType']
+                            break
+
+            else:
+                gun_priority = GetWeaponPriority(weapon_type)
+                if gun_priority == ItemsCatalog.SECONDARY:
+                    entity.SecondaryWeaponUpgrades[ItemsCatalog.weapon_upgrades_dict[upgrade]] = 0
+                else:
+                    entity.PrimaryWeaponUpgrades[ItemsCatalog.weapon_upgrades_dict[upgrade]] = 0
+
+        entity.PrimaryWeaponUpgrades = entity.PrimaryWeaponUpgrades
+        entity.SecondaryWeaponUpgrades = entity.SecondaryWeaponUpgrades
+        return
+
+
+def ClearActiveWeaponUpgradesTypes(entity, item):
+    weapon_type = ItemsCatalog.GetItemParam(item['complexItemType'])['GunType']
+    gun_priority = GetWeaponPriority(weapon_type)
+    if gun_priority == ItemsCatalog.SECONDARY:
+        for key in entity.SecondaryWeaponUpgrades.keys():
+            entity.SecondaryWeaponUpgrades[key] = 0
+
+    else:
+        for key in entity.PrimaryWeaponUpgrades.keys():
+            entity.PrimaryWeaponUpgrades[key] = 0
+
+
+def CalculateWeightSummary(entitity):
+    weight = 0
+    for items in entitity.CarryingItems:
+        weight += GetItemWeight(entitity, items)
+
+    return weight
+
+
+def GetArtefactDepleetionPercent(item, item_param = None):
+    if item_param == None:
+        item_param = ItemsCatalog.GetItemParam(item['complexItemType'])
+    if item_param.has_key('TimeToLive'):
+        if GetSingleInconstantParam(item, ItemsCatalog.INC_WAS_EQUIPPED, default=0):
+            return 0.0
+        TTL = item_param['TimeToLive']
+        artifact_time = time.time() - item['creationTime']
+        if artifact_time >= 0.0:
+            if artifact_time > TTL:
+                return 0.0
+            else:
+                return 1.0 - artifact_time / TTL
+        else:
+            return 1.0
+    else:
+        return 1.0
+    return
+
+
+def GetArtefactInContainerDepleetionTime(subitem):
+    inc_param = GetSubItemInconstanParams(subitem)
+    artifact_time = inc_param.get(ItemsCatalog.INC_ARTEFACT_TIME_DELTA, 0)
+    item_param = ItemsCatalog.GetItemParam(subitem['itemType'])
+    if 'TimeToLive' not in item_param:
+        return 0
+    return item_param['TimeToLive'] - artifact_time
+
+
+def GetArtefactDepleetionTime(item, item_param = None, diffTime = 0.0):
+    if item_param == None:
+        item_param = ItemsCatalog.GetItemParam(item['complexItemType'])
+    if item_param.has_key('TimeToLive'):
+        TTL = 0.0
+        if item_param.has_key('EquippedTimeToLive'):
+            inc_params = GetComplexItemInconstanParams(item)
+            was_equipped = inc_params.get(ItemsCatalog.INC_WAS_EQUIPPED, 0)
+            if was_equipped:
+                TTL += inc_params.get(ItemsCatalog.ART_DEPLET_DELTA, 0.0)
+        TTL += item_param['TimeToLive']
+        artifact_time = time.time() - item['creationTime'] - diffTime
+        if artifact_time >= 0.0:
+            return TTL - artifact_time
+        else:
+            return
+    else:
+        return
+    return
+
+
+def GetItemDestroyTime(item, item_param = None):
+    if item_param == None:
+        item_param = ItemsCatalog.GetItemParam(item['complexItemType'])
+    if item_param.has_key('TTL'):
+        TTL = item_param['TTL']
+        item_time = time.time() - item['creationTime']
+        return TTL - item_time
+    else:
+        return
+        return
+
+
+def CheckArtifactDepleetionPercentZero(percent):
+    if percent < 0.0001:
+        return True
+    return False
+
+
+def GetGoldItemCost(item):
+    return CalcItemCostDiscount(item, 'GoldCost', 'DeepleetedGoldCost')
+
+
+def GetItemCost(item):
+    return CalcItemCostDiscount(item, 'Cost', 'DeepleetedCost')
+
+
+def CalcItemCostDiscount(item, cost_param_name, depleeted_cost_name):
+    itemParam = ItemsCatalog.GetItemParam(item['complexItemType'])
+    if not itemParam:
+        return 0.0
+    item_class = ItemsCatalog.GetItemClass(item['complexItemType'])
+    pure_item_cost = itemParam.get(cost_param_name, 0.0)
+    if item_class == ItemsCatalog.CLOTH:
+        item_cost = pure_item_cost
+        param = GetComplexItemInconstanParams(item)
+        item_max_condition = itemParam['MaxCondition']
+        discount = float(param[ItemsCatalog.INC_CONDITION_VALUE]) / item_max_condition
+        return_cost = item_cost * discount
+    elif item_class == ItemsCatalog.WEAPON:
+        item_cost = pure_item_cost
+        for subitem in item['itemList']:
+            item_cost += GetPureItemCost(subitem['itemType'])
+
+        param = GetComplexItemInconstanParams(item)
+        item_max_condition = itemParam['MaxCondition']
+        discount = float(param[ItemsCatalog.INC_CONDITION_VALUE]) / item_max_condition
+        return_cost = item_cost * discount
+    elif item_class in [ItemsCatalog.AMMO, ItemsCatalog.EXPLOSION]:
+        param = GetComplexItemInconstanParams(item)
+        return_cost = pure_item_cost / itemParam['PackageSize'] * param[ItemsCatalog.INC_ROUND_NUMBER]
+    elif item_class == ItemsCatalog.BUFF:
+        param = GetComplexItemInconstanParams(item)
+        return_cost = pure_item_cost / itemParam['PackageSize'] * param[ItemsCatalog.INC_USES_NUMBER]
+    elif item_class in [ItemsCatalog.LOOT]:
+        param = GetComplexItemInconstanParams(item)
+        return_cost = pure_item_cost * param[ItemsCatalog.INC_WARE_NUMBER]
+    elif item_class in [ItemsCatalog.ARTIFACT]:
+        depleetion_percent = GetArtefactDepleetionPercent(item, itemParam)
+        deepleted_cost = itemParam.get(depleeted_cost_name, 0.0)
+        pure_cost = pure_item_cost
+        return_cost = deepleted_cost + (pure_cost - deepleted_cost) * depleetion_percent
+    else:
+        return_cost = pure_item_cost
+    return int(return_cost)
+
+
+def GetBuffUsesNumber(item, inconstant_params = None):
+    if inconstant_params is None:
+        inconstant_params = GetComplexItemInconstanParams(item)
+    return inconstant_params.get(ItemsCatalog.INC_USES_NUMBER)
+
+
+def GetDefaultItemNumber(item_type, item_param = None):
+    default_number = 1
+    if item_param == None:
+        item_param = ItemsCatalog.GetItemParam(item_type)
+    item_class = ItemsCatalog.GetItemClass(item_type)
+    if item_class == ItemsCatalog.AMMO:
+        default_number = item_param['PackageSize']
+    return default_number
+
+
+def onGetMaxWeight(entity):
+    if entity.ActiveArmorSet.BackPackID > 0:
+        item_type = entity.ActiveArmorSet.BackPackType
+        item_param = ItemsCatalog.GetItemParam(item_type)
+        if item_param.has_key('WeightModifyer'):
+            return item_param['WeightModifyer']
+    return 0
+
+
+def GetItemWeight(entity, item):
+    EQUIPPED_ITEM_WEIGHT_MODIFYER = 0.5
+    if IsQuestItem(item):
+        return 0.0
+    itemParam = ItemsCatalog.GetItemParam(item['complexItemType'])
+    if itemParam:
+        item_class = ItemsCatalog.GetItemClass(item['complexItemType'])
+        if item_class == ItemsCatalog.WEAPON:
+            item_weight = itemParam['Weight']
+            for subitem in item['itemList']:
+                subItemParam = ItemsCatalog.GetItemParam(subitem['itemType'])
+                item_weight += subItemParam['Weight']
+
+            if item['complexItemID'] == entity.ActiveItemID:
+                item_weight *= EQUIPPED_ITEM_WEIGHT_MODIFYER
+            return item_weight * entity.GetWeightModifyer(ItemsCatalog.WEAPON, itemParam['GunType'])
+        if item_class == ItemsCatalog.CLOTH:
+            for key in ItemsCatalog.cloth_dict.keys():
+                if entity.ActiveArmorSet[ItemsCatalog.cloth_dict[key][0]] == item['complexItemID']:
+                    return itemParam['Weight'] * EQUIPPED_ITEM_WEIGHT_MODIFYER
+
+        if item_class in [ItemsCatalog.AMMO, ItemsCatalog.EXPLOSION]:
+            param = GetComplexItemInconstanParams(item)
+            return itemParam['Weight'] * param[ItemsCatalog.INC_ROUND_NUMBER] * entity.GetWeightModifyer(ItemsCatalog.AMMO, 0)
+        if item_class in [ItemsCatalog.LOOT]:
+            param = GetComplexItemInconstanParams(item)
+            return itemParam['Weight'] * param[ItemsCatalog.INC_WARE_NUMBER] * entity.GetWeightModifyer(ItemsCatalog.LOOT, 0)
+        return itemParam['Weight']
+    return 0.0
+
+
+def checkTraderAssortment(entity, trader):
+    pass
+
+
+def getTraderAssortmentByClanID(entity, trader):
+    for assortment in trader.clanAssortment:
+        if entity.cellClanID == assortment['ClanID']:
+            return assortment['Assortments']
+
+    return []
+
+
+def GetTraderAssortmentEntry(entity, type, clanid = 0, donate = False):
+    assortment = entity.Assortment + entity.donateAssortment
+    for entry in assortment:
+        if entry['Type'] == type:
+            return entry
+
+    return GetTraderAssortmentEntryByClanID(entity, type, clanid)
+
+
+def GetTraderAssortmentEntryByClanID(entity, type, ClanID):
+    for entry in entity.clanAssortment:
+        if entry['ClanID'] == ClanID:
+            for item in entry['Assortments']:
+                if item['Type'] == type:
+                    return item
+
+
+def DeleteTraderAssortmentEntry(entity, type):
+    for index in xrange(len(entity.Assortment)):
+        if entity.Assortment[index].Type == type:
+            entity.Assortment.pop(index)
+            return
+
+
+def GetPureItemCost(itemType, param = None):
+    if param == None:
+        param = ItemsCatalog.GetItemParam(itemType)
+    if param:
+        cost = param.get('Cost', 0)
+        return cost
+    else:
+        return
+
+
+def GetGoldPureItemCost(itemType, param = None):
+    if param == None:
+        param = ItemsCatalog.GetItemParam(itemType)
+    if param:
+        gold_cost = param.get('GoldCost', 0)
+        return gold_cost
+    else:
+        return
+
+
+def CanItemBeSoldForGold(itemType, param = None):
+    if param == None:
+        param = ItemsCatalog.GetItemParam(itemType)
+    if param:
+        s_f_g = param.get('SoldForGold', 0)
+    return s_f_g
+
+
+def CanItemBeBoughtForGold(itemType, param = None):
+    if param == None:
+        param = ItemsCatalog.GetItemParam(itemType)
+        if not param:
+            print 'itemType', itemType
+    if param:
+        b_f_g = param.get('BoughtForGold', 0)
+    return b_f_g
+
+
+def GetTraderSellCost(trade_entry, forGold = False):
+    TRADE_PERCENT = 1.0 + trade_entry['MarginSell']
+    if forGold or CanItemBeBoughtForGold(trade_entry['Type']):
+        credit_cost = 0.0
+        gold_cost = int(GetGoldPureItemCost(trade_entry['Type']))
+    else:
+        credit_cost = int(GetPureItemCost(trade_entry['Type']) * TRADE_PERCENT)
+        gold_cost = 0.0
+    return [credit_cost, gold_cost]
+
+
+def GetTraderBuyCost(item, buyer_entity, trader_entity):
+    if not item:
+        return [0, 0]
+    else:
+        trade_list_entry = GetTraderAssortmentEntry(trader_entity, item['complexItemType'])
+        if trade_list_entry != None:
+            TRADE_PERCENT = 1.0 - trade_list_entry['MarginBuy']
+        else:
+            TRADE_PERCENT = 1.0 - trader_entity.pMarginBuy
+        if CanItemBeSoldForGold(item['complexItemType']):
+            gold_cost = int(GetGoldItemCost(item) * TRADE_PERCENT)
+            credit_cost = 0
+        else:
+            credit_cost = GetItemCost(item) * TRADE_PERCENT
+            gold_cost = 0
+        return [credit_cost, gold_cost]
+
+
+def packItemDict(itemDict):
+    keys_list = itemDict.keys()
+    values_list = itemDict.values()
+    return (keys_list, values_list)
+
+
+def unpackItemDict(keys, values):
+    zipped = zip(keys, values)
+    return dict(zipped)
+
+
+def GetArmorDictKeyByID(entity, id):
+    for key in ItemsCatalog.cloth_dict.keys():
+        if entity.ActiveArmorSet[ItemsCatalog.cloth_dict[key][0]] == id:
+            return key
+
+
+def GetEquippedItemCondition(entity, armor_id, armor_params):
+    for entry in entity.ActiveArmorConditionList:
+        if entry['ArmorID'] == armor_id:
+            max_condition = GetItemCurrentMaxCondition(entry['ArmorRepairsNumber'], armor_params)
+            if max_condition:
+                return entry['ArmorCondition'] / max_condition
+            else:
+                return 0.0
+
+
+def GetItemCurrentMaxCondition(num_repairs, params):
+    State_0 = float(params['MaxCondition'])
+    State_min = float(params['MinCondition'])
+    Quality = float(params['ItemQuality'])
+    State_max = (State_0 - State_min) / (Quality * num_repairs / (State_min - Quality) + 1) + State_min
+    return round(float(State_max), 1)
+
+
+def GetExplosionDamage(explosion_type):
+    complexItemParams = ItemsCatalog.GetItemParam(explosion_type)
+    grenadeMainDamage = deepcopy(complexItemParams['DamageMain'])
+    grenadeAdditionalDamage = deepcopy(complexItemParams['DamageAdditional'])
+    return dict(penetration=complexItemParams['Penetration'], mainDamage=grenadeMainDamage, additionalDamage=grenadeAdditionalDamage, waveRadius=complexItemParams['WaveRadius'], explodeTime=complexItemParams['TimeBeforeExplode'], effectsOnExplode=complexItemParams.get('ExplodeEffects', []))
+
+
+def ChangeItemInconstantParam(item, param, value, entity = None):
+    inc_params = GetComplexItemInconstanParams(item, entity)
+    inc_params[param] = value
+    SetComplexItemInconstanParams(item, inc_params)
+
+
+def GetSingleInconstantParam(item, param, entity = None, default = None):
+    inc_params = GetComplexItemInconstanParams(item, entity)
+    return inc_params.get(param, default)
+
+
+def GetComplexItemInconstanParams(item, entity = None):
+    if entity:
+        item_id = item['complexItemID']
+        if item_id == entity.ActiveItemID:
+            item_params_dict = unpackItemDict(item['complexItemParametresKeys'], item['complexItemParametresValues'])
+            item_params_dict[ItemsCatalog.INC_MUNITION_NUMBER] = entity.ActiveItemAmmo
+            item_params_dict[ItemsCatalog.INC_CONDITION_VALUE] = entity.ActiveItemCondition
+            item_params_dict[ItemsCatalog.INC_REPAIRS_NUMBER] = entity.ActiveItemRepairsNumber
+            item_params_dict[ItemsCatalog.INC_IS_BROKEN] = entity.ActiveItemJammed
+            item_params_dict[ItemsCatalog.INC_LOADED_MUNITION_TYPE] = entity.ActiveItemAmmoType
+            return item_params_dict
+        for entry in entity.ActiveArmorConditionList:
+            if entry['ArmorID'] == item_id:
+                item_params_dict = unpackItemDict(item['complexItemParametresKeys'], item['complexItemParametresValues'])
+                item_params_dict[ItemsCatalog.INC_CONDITION_VALUE] = entry['ArmorCondition']
+                item_params_dict[ItemsCatalog.INC_REPAIRS_NUMBER] = entry['ArmorRepairsNumber']
+                return item_params_dict
+
+    return unpackItemDict(item['complexItemParametresKeys'], item['complexItemParametresValues'])
+
+
+def GetSubItemInconstanParams(sub_item):
+    return unpackItemDict(sub_item['itemParametresKeys'], sub_item['itemParametresValues'])
+
+
+def SetComplexItemInconstanParams(entitity, dict):
+    keys, values = packItemDict(dict)
+    entitity['complexItemParametresKeys'], entitity['complexItemParametresValues'] = keys, values
+
+
+def GetDisplayValue(item):
+    EMPTY = ''
+    if IsItemFake(item):
+        return EMPTY
+    item_type = item['complexItemType']
+    inconstant_params = GetComplexItemInconstanParams(item)
+    item_class = ItemsCatalog.GetItemClass(item_type)
+    if item_class == ItemsCatalog.WEAPON:
+        return EMPTY
+    elif item_class == ItemsCatalog.AMMO:
+        return str(inconstant_params[ItemsCatalog.INC_ROUND_NUMBER])
+    elif item_class == ItemsCatalog.EXPLOSION:
+        return str(inconstant_params[ItemsCatalog.INC_ROUND_NUMBER])
+    elif item_class == ItemsCatalog.BUFF:
+        item_param = ItemsCatalog.GetItemParam(item_type)
+        if 'IsArtefactContainer' in item_param:
+            num_uses = inconstant_params.get(ItemsCatalog.INC_USES_CONTAINER_NUMBER, 0)
+            max_uses = item_param['MaxUseArtefact']
+            if num_uses > max_uses:
+                num_uses = max_uses
+            return '%s  /  %s' % (max_uses - num_uses, max_uses)
+        return str(inconstant_params[ItemsCatalog.INC_USES_NUMBER])
+    elif item_class == ItemsCatalog.LOOT:
+        return str(inconstant_params[ItemsCatalog.INC_WARE_NUMBER])
+    else:
+        return EMPTY
+
+
+def IsItemFake(item):
+    if item['complexItemID'] == 0:
+        return True
+    else:
+        return False
+
+
+def CreateComplexItem(complexItemID, complexItemType, complexItemParameresKeys, complexItemParameresValues, fromEntityID):
+    return {'complexItemID': complexItemID,
+     'itemList': [],
+     'complexItemType': complexItemType,
+     'complexItemParametresKeys': complexItemParameresKeys,
+     'complexItemParametresValues': complexItemParameresValues,
+     'fromEntityID': 0,
+     'creationTime': time.time()}
+
+
+def GetItemNumber(item):
+    item_type = item['complexItemType']
+    inconstant_params = GetComplexItemInconstanParams(item)
+    item_class = ItemsCatalog.GetItemClass(item_type)
+    if item_class in [ItemsCatalog.AMMO, ItemsCatalog.EXPLOSION]:
+        return inconstant_params[ItemsCatalog.INC_ROUND_NUMBER]
+    elif item_class == ItemsCatalog.LOOT:
+        return inconstant_params[ItemsCatalog.INC_WARE_NUMBER]
+    else:
+        return 1
+
+
+def CheckEquippedItemValidityCell(entity):
+    if entity.ActiveItemID == 0:
+        return False
+    if entity.ActiveItemType == 0:
+        entity.ActiveItemID == 0
+        traceback.print_stack()
+        entity.wipeItem(entity.ActiveItemID)
+        return False
+    if len(entity.CarryingItems) == 0:
+        return False
+    return True
+
+
+def CheckEquippedItemValidityClient(entity):
+    if entity.ActiveItemID == 0:
+        return False
+    if entity.ActiveItemType == 0:
+        entity.ActiveItemID == 0
+        traceback.print_stack()
+        entity.cell.wipeItem(entity.ActiveItemID)
+        return False
+    return True
+
+
+def CheckMoney(check_sum, aviable_sum):
+    if check_sum[COST_CREDIT] > 0:
+        if aviable_sum[COST_CREDIT] <= 0:
+            return False
+        if check_sum[COST_CREDIT] > aviable_sum[COST_CREDIT]:
+            return False
+    if check_sum[COST_GOLD] > 0:
+        if aviable_sum[COST_GOLD] <= 0:
+            return False
+        if check_sum[COST_GOLD] > aviable_sum[COST_GOLD]:
+            return False
+    return True
+
+
+def GetPlayerMoney(entity):
+    return [entity.CreditNumber, entity.GoldCreditNumber]
+
+
+def GetTraderItemCost(trader, item_type):
+    return GetPureItemCost(item_type) * (1 + trader.pMargin)
+
+
+def CheckEquippedGrenadeValidityCell(entity):
+    if entity.ActiveGrenadeID == 0:
+        return False
+    if entity.ActiveGrenadeType == 0:
+        entity.ActiveGrenadeID == 0
+        traceback.print_stack()
+        entity.cell.wipeItem(entity.ActiveItemID)
+        return False
+    if len(entity.CarryingItems) == 0:
+        return False
+    return True
+
+
+def CheckEquippedGrenadeValidityClient(entity):
+    if entity.ActiveGrenadeID == 0:
+        return False
+    if entity.ActiveGrenadeType == 0:
+        entity.ActiveGrenadeID == 0
+        traceback.print_stack()
+        entity.cell.wipeItem(entity.ActiveItemID)
+        return False
+    return True
+
+
+def GetComplexItemTypeParams(entity, complexItemID):
+    complexItem = GetComplexItemByID(entity, complexItemID)
+    complexItemType = complexItem['complexItemType']
+    complexItemParams = ItemsCatalog.GetItemParam(complexItemType)
+    return (complexItem, complexItemType, complexItemParams)
+
+
+def SaveItemChanges(entity, item):
+    for index in xrange(len(entity.CarryingItems)):
+        if item['complexItemID'] == entity.CarryingItems[index]['complexItemID']:
+            entity.CarryingItems[index] = item
+
+
+def GetRepairKitItem(entity):
+    for item in entity.CarryingItems:
+        item_type = item['complexItemType']
+        item_class = ItemsCatalog.GetItemClass(item_type)
+        if item_class == ItemsCatalog.BUFF:
+            param = ItemsCatalog.GetItemParam(item_type)
+            if 'Effect' in param and param['Effect'].has_key(ItemsCatalog.EFFECTS_REPAIR):
+                return item
+
+    return None
+
+
+def GetSubItemByID(item, id):
+    for item in item['itemList']:
+        if item['itemID'] == id:
+            return item
+
+
+def GetTypeFromID(entity, complexItemID):
+    complexItem = GetComplexItemByID(entity, complexItemID)
+    return complexItem['complexItemType']
+
+
+def GetComplexItemParams(entity, complexItemID):
+    complexItem = GetComplexItemByID(entity, complexItemID)
+    if complexItem:
+        complexItemType = complexItem['complexItemType']
+        complexItemParams = ItemsCatalog.GetItemParam(complexItemType)
+        return complexItemParams
+
+
+def GetComplexItemByID(entity, complexItemID, getNotAppruved = False):
+    for item in entity.CarryingItems:
+        if item['complexItemID'] == complexItemID:
+            if getNotAppruved:
+                return item
+            if item['fromEntityID'] == 0:
+                return item
+
+
+def GetComplexItemByIDFromStoredItems(entity, TraderName, complexItemID):
+    for trade_item in entity.StoredItems:
+        if trade_item['TraderName'] != TraderName:
+            continue
+        for item in trade_item['Items']:
+            if item['complexItemID'] == complexItemID:
+                return item
+
+
+def GetExchangeItem(entity, item_id):
+    for item in entity.ExchangeProperties.ItemsToExchange:
+        if item['complexItemID'] == item_id:
+            return item
+
+
+def GetComplexItemNumberByID(entity, complexItemID):
+    for index in xrange(len(entity.CarryingItems)):
+        if entity.CarryingItems[index]['complexItemID'] == complexItemID:
+            return index
+
+
+def GetItemNumberByType(entity, itemType):
+    for index in xrange(len(entity.CarryingItems)):
+        if entity.CarryingItems[index]['complexItemType'] == itemType:
+            return index
+
+    return None
+
+
+def GetComplexItemByType(entity, itemType):
+    for item in entity.CarryingItems:
+        if item['complexItemType'] == itemType:
+            return item
+
+    return None
+
+
+def GetComplexItemByTypeGenerator(entity, itemType):
+    for item in entity.CarryingItems:
+        if item['complexItemType'] == itemType:
+            yield item
+
+
+def GetEquippedItemType(entity):
+    complexItemType = entity.ActiveItemType
+    complexItemParams = ItemsCatalog.GetItemParam(complexItemType)
+    if not complexItemParams:
+        return ItemsCatalog.NONE_TYPE
+    item_class = ItemsCatalog.GetItemClass(complexItemType)
+    if item_class != ItemsCatalog.WEAPON:
+        return ItemsCatalog.NONE_TYPE
+    return complexItemParams['GunType']
+
+
+def GetEquippedItemLoadType(entity):
+    complexItemType = entity.ActiveItemType
+    complexItemParams = ItemsCatalog.GetItemParam(complexItemType)
+    if not complexItemParams:
+        return ItemsCatalog.NONE_TYPE
+    item_class = ItemsCatalog.GetItemClass(complexItemType)
+    if item_class != ItemsCatalog.WEAPON:
+        return ItemsCatalog.NONE_TYPE
+    return complexItemParams['LoadType']
+
+
+def GetEquippedItemGrip(entity):
+    complexItemType = entity.ActiveItemType
+    complexItemParams = ItemsCatalog.GetItemParam(complexItemType)
+    if not complexItemParams:
+        return ItemsCatalog.NONE_TYPE
+    item_class = ItemsCatalog.GetItemClass(complexItemType)
+    if item_class != ItemsCatalog.WEAPON:
+        return ItemsCatalog.NONE_TYPE
+    return complexItemParams['GripType']
+
+
+def GetAmmoByType(entity, ammo_type):
+    for item in entity.CarryingItems:
+        if item['complexItemType'] >= ItemsCatalog.MAX_PARTS_NUMBER + 1 and item['complexItemType'] <= ItemsCatalog.MAX_AMMO_NUMBER:
+            itemParams = ItemsCatalog.GetItemParam(item['complexItemType'])
+            if itemParams['AmmoType'] == ammo_type:
+                return item
+
+    return None
+
+
+def GetFirstMedecineItem(entity):
+    max_ruserrect_order = -1
+    item_to_return = None
+    for item in entity.CarryingItems:
+        item_type = item['complexItemType']
+        if ItemsCatalog.GetItemClass(item_type) == ItemsCatalog.BUFF:
+            itemParams = ItemsCatalog.GetItemParam(item_type)
+            if itemParams.has_key('RessurectOrder'):
+                if itemParams['RessurectOrder'] >= max_ruserrect_order:
+                    item_to_return = item
+
+    return item_to_return
+
+
+def GetUniqueAmmosListByType(entity, ammo_type):
+    ammo_dict = dict()
+    for item in entity.CarryingItems:
+        item_type = item['complexItemType']
+        if item_type >= ItemsCatalog.MAX_PARTS_NUMBER + 1 and item_type <= ItemsCatalog.MAX_AMMO_NUMBER:
+            itemParams = ItemsCatalog.GetItemParam(item['complexItemType'])
+            if itemParams['AmmoType'] == ammo_type:
+                if ammo_dict.has_key(item_type):
+                    continue
+                else:
+                    ammo_dict[item_type] = item
+
+    return ammo_dict.values()
+
+
+def GetAmmoNumberByType(entity, ammo_type):
+    for index in xrange(len(entity.CarryingItems)):
+        if entity.CarryingItems[index]['complexItemType'] >= ItemsCatalog.MAX_PARTS_NUMBER + 1 and entity.CarryingItems[index]['complexItemType'] <= ItemsCatalog.MAX_AMMO_NUMBER:
+            itemParams = ItemsCatalog.GetItemParam(entity.CarryingItems[index]['complexItemType'])
+            if itemParams['AmmoType'] == ammo_type:
+                return index
+
+    return None
+
+
+def ConvertTypesListToDict(list, control_pack_size = False):
+    result_dict = {}
+    result_list = list
+    for item_type in result_list:
+        if result_dict.has_key(item_type):
+            continue
+        elif control_pack_size:
+            result_dict[item_type] = result_list.count(item_type) * GetDefaultItemNumber(item_type)
+        else:
+            result_dict[item_type] = result_list.count(item_type)
+
+    return result_dict
+
+
+def GetWeaponPriority(gun_type):
+    if gun_type in [ItemsCatalog.PISTOL, ItemsCatalog.REVOLVER]:
+        return ItemsCatalog.SECONDARY
+    else:
+        return ItemsCatalog.PRIMARY
+
+
+def CheckMaxItemNumber(entity, item_to_add):
+    if len(entity.CarryingItems) + item_to_add <= MAX_AVATAR_ITEMS:
+        return True
+    return False
+
+
+def getItemDict(item):
+    il = []
+    if len(item['itemList']) > 0:
+        for x in item['itemList']:
+            il.append(dict(x))
+
+    d = dict(item)
+    d['itemList'] = il
+    return d
+
+
+def getItemStr(item):
+    return str(getItemDict(item))
+
+
+def getFilterXGunType(gun_type):
+    return gun_type + 100
+
+
+def getFilterXArmorTypes(ArmorTypes):
+    return [ t + 200 for t in ArmorTypes ]
+
+
+def getFilterTags(itemTypeID):
+    fTags = []
+    item = ItemsCatalog.GetItemParam(itemTypeID)
+    itemClass = ItemsCatalog.GetItemClass(itemTypeID)
+    fTags.append(itemClass)
+    if itemClass == ItemsCatalog.WEAPON:
+        GunType = getFilterXGunType(item['GunType'])
+        fTags.append(GunType)
+    if itemClass == ItemsCatalog.CLOTH:
+        ArmorTypes = getFilterXArmorTypes(item['ArmorType'])
+        fTags += ArmorTypes
+    return fTags

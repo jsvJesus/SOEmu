@@ -1,0 +1,36 @@
+# Embedded file name: scripts/common/gui_const/MESSAGEBOX.py
+BTN_OK = 0
+BTN_CANCEL = 1
+BTN_YES = 2
+BTN_NO = 3
+BTN_UNDO = 4
+BTN_APPLY = 5
+BTN_RESET = 6
+BTN_CONFIRM = 7
+BTN_SAVE = 8
+EVENT_BTNPRESS = 0
+EVENT_CLOSE = 1
+EVENT_CLOSE_NONUSER = 2
+EVENT_ADDCONTROL = 3
+ANCHOR_LEFT = 'LEFT'
+ANCHOR_CENTER = 'CENTER'
+ANCHOR_RIGHT = 'RIGHT'
+ADDCONTROL_EDIT = 'edit'
+ADDCONTROL_SLIDER = 'slider'
+ADDCONTROL_CHECKBOX = 'check'
+ADDCONTROL_RADIO = 'radio'
+ADDCONTROL_LIST = 'list'
+ADDCONTROL_DDL = 'combo_box'
+ADDCONTROL_TEXTFIELD = 'txt'
+ADDCONTROL_LABEL = 'label'
+ADDCONTROL_SPACING_T1 = 'spacing1'
+ADDCONTROL_SPACING_T2 = 'spacing2'
+
+def isClosingBtn(btn):
+    if btn in [BTN_OK,
+     BTN_CANCEL,
+     BTN_YES,
+     BTN_NO,
+     BTN_CONFIRM]:
+        return True
+    return False

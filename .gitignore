@@ -1,3 +1,25 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a775fe58c154eb47ed089fc4608025e4ba6058e45f9e08526d2dda1b4ee12c30
-size 252
+__pycache__/
+*.py[cod].new
+*.log
+.vscode/
+.idea/
+
+# Local credentials and environment files.
+.env
+.env.*
+!.env.example
+
+# Full client resources intentionally do not belong in this source archive.
+game/
+packs/res/audio/
+packs/res/models/
+packs/res/spaces/
+packs/res/textures/
+*.dds
+*.fsb
+*.model
+*.visual
+*.animation
+*.dll
+*.exe
+*.privkey

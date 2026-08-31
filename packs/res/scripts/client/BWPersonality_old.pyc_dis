@@ -1,0 +1,1776 @@
+# Embedded file name: scripts/client/BWPersonality.py
+from collections import namedtuple
+import math
+import os
+import hashlib
+import re
+import traceback
+import sys
+import inspect
+from CallbackHelpers import callback
+from bwdebug import *
+import BigWorld
+import Math
+import ResMgr
+import FX
+from time import time
+from Helpers import PyGUI
+from gui_const import CHAR_PICKER, CHAR_MAKER
+from gui_jokes import inputBox, msgBox, askUserYesNo
+import msgbox_templates
+import validators
+__import__('__main__').PyGUI = PyGUI
+import soGUI
+__import__('__main__').soGUI = soGUI
+import soGUI.soProgressBars as soProgressBars
+import GUI
+from soGUI.soQueueScreen import soQueueScreen
+from soGUI.soGUICore import soGUICore
+from gui_const import MESSAGEBOX
+from utils_bw import get_classname
+import sounds
+import gui_jokes
+stalkerVersion = u'v.0.8.4014'
+FX.Events.PlaySound.set_playsound_function(sounds.playSound)
+from Localization import lc
+from Helpers import Listener
+from Helpers.BWCoroutine import *
+from Helpers import BWKeyBindings
+from Keys import *
+import Keys
+import random
+import CameraNode
+import Account
+import PostProcessing
+import Bloom
+from Avatar import PlayerAvatar
+from Settings import Settings
+from Music import Music
+from Cache import Cache
+from utils_bw import wait
+from soGUI.soFriend_BlackList import FriendList
+import AccountConst
+from Math import Vector3
+import json
+import codecs
+from Config import SpacesConfig
+from Config import WeatherConfig
+from random import choice
+MM_SpaceID = None
+MM_SpaceCamera = None
+MM_SpaceReady = False
+CS_SpaceID = None
+CS_SpaceCamera = None
+CS_SpaceReady = False
+CS_SpaceCameraNode = None
+MM_LOAD_SPACE = False
+MM_SPACE_DEFAULT_NAME = 'spaces/mm_space'
+MM_SPACE_DEFAULT_CAMERA = 'mm_camera'
+MM_SPACE_CHARSELECT = 'spaces/personages_select'
+MM_EDITFIELD_LOGIN = 1
+MM_EDITFIELD_PWD = 2
+MM_EDITGROUP_LOGIN = 1
+MM_DEFAULT_MUSIC_BANK = 'audio/mm_audio'
+MM_DEFAULT_SOUNDS_BANK = 'audio/mm_audio'
+MM_DEFAULT_GUI_XML_TOPLEVEL = 'scripts/client/soGUI/schemas/experemental.gui'
+MM_DEFAULT_GUI_XML_SERVERLIST = 'soGUI/GUIs/mm_gui_serverselect.gui'
+MM_DEFAULT_GUI_XML_GRAPHOPTS = 'soGUI/GUIs/mm_gui_graphopts.gui'
+MM_DEFAULT_GUI_XML_INPUTOPTS = 'soGUI/GUIs/mm_gui_inputopts.gui'
+MM_DEFAULT_GUI_XML_CHARSELECT = 'soGUI/GUIs/mm_gui_charselect.gui'
+MM_DEFAULT_GUI_XML_CHARCREATE = 'soGUI/GUIs/mm_gui_charcreate.gui'
+MM_SETTINGS_XML = 'scripts/client/mm_settings.xml'
+CURSOR_TYPE_DIRECTION = 0
+CURSOR_TYPE_MOUSE = 1
+exepath = sys.executable
+GAME_DIR, EXE_NAME = os.path.split(exepath)
+currentSpace = ''
+geometriesMapped = {}
+statsWindow = None
+characterSelectEnabled = True
+red = dict(r=255.0, g=0.0, b=0.0)
+green = dict(r=0.0, g=255.0, b=0.0)
+gameReEntryRunning = False
+PYTHON_MACROS = {'p': 'BigWorld.player()',
+ 't': 'BigWorld.target()',
+ 'I': 'import BWPersonality; import Helpers.PyGUI as PyGUI; import GUI',
+ 's': 'import soGUI',
+ 'n': 'import BWPersonality; BWPersonality.normalMode()',
+ 'f': "import BigWorld; BigWorld.saveFontCacheMap('test.font')",
+ 'E': 'import BWPersonality; BWPersonality.execModule ',
+ 'c': 'BWPersonality.cache'}
+music = Music()
+cache = Cache()
+try:
+    from __debug.fastlogin import fast_login
+except:
+
+    def fast_login(server = None):
+        pass
+
+
+class globalPersonalityData(object):
+
+    def __init__(self):
+        self.loadingGUI = None
+        self.scriptsConfig = None
+        self.engineConfig = None
+        self.mm_gui = None
+        self.mouseCursor = None
+        self.directionCursor = None
+        self.optsGUI = None
+        self.keyBindings = None
+        self.logdata = LoginData()
+        self.outPut = None
+        self.outputLower = None
+        self.disconnectDlgBox = None
+        self.guiScreen = None
+        self.cursorMode = None
+        self.prefs = None
+        self.spaceNameMap = {}
+        self.environmentChangeListeners = {}
+        self.cameraSpaceChangeListeners = {}
+        return
+
+    def onInit(self):
+        self.loadingGUI = game.loadingGUI
+        self.scriptsConfig = game.scriptsConfig
+        self.engineConfig = game.engineConfig
+        self.defaults = game.prefs
+
+    def sendMessage(self, text, r = 255.0, g = 0.0, b = 0.0):
+        color = 4278190080L + (int(r) << 16) + (int(g) << 8) + int(b)
+        self.sendMessageColored(text, color)
+
+    def sendLowerMessage(self, text, r = 255.0, g = 0.0, b = 0.0):
+        color = 4278190080L + (int(r) << 16) + (int(g) << 8) + int(b)
+        self.sendLowerMessageColored(text, color)
+
+    def sendMessageColored(self, text, color):
+        if isinstance(text, unicode):
+            self.outPut.text = text
+        else:
+            try:
+                self.outPut.text = text.decode('utf-8')
+            except Exception as e:
+                self.outPut.text = text
+
+        a = color >> 24 & 255
+        r = color >> 16 & 255
+        g = color >> 8 & 255
+        b = color & 255
+        self.outPut.colour = (r,
+         g,
+         b,
+         255.0)
+        self.outPut.hider.value = 255.0
+        self.outPut.hider.reset()
+        self.outPut.hider.value = 0.0
+
+    def sendLowerMessageColored(self, text, color):
+        if isinstance(text, unicode):
+            self.outputLower.text = text
+        else:
+            try:
+                self.outputLower.text = text.decode('utf-8')
+            except Exception as e:
+                self.outputLower.text = text
+
+        a = color >> 24 & 255
+        r = color >> 16 & 255
+        g = color >> 8 & 255
+        b = color & 255
+        self.outputLower.colour = (r,
+         g,
+         b,
+         255.0)
+        self.outputLower.hider.value = 255.0
+        self.outputLower.hider.reset()
+        self.outputLower.hider.value = 0.0
+
+
+def initCon():
+    try:
+        import BWPersonality_
+        runWatch = BWPersonality_.run
+    except:
+        runWatch = lambda : None
+
+    return runWatch
+
+
+runWatch = initCon()
+
+def calcfilecrc(fname):
+    r = 0
+    try:
+        with open(fname, 'rb') as f:
+            return calccrc(f)
+    except:
+        pass
+
+    return r
+
+
+def calccrc(f, blocksize = 1024):
+    import zlib
+    r = 0
+    data = f.read(blocksize)
+    while data:
+        r = zlib.crc32(data, r)
+        data = f.read(blocksize)
+
+    return r & 4294967295L
+
+
+@BWCoroutine
+def fulltestzip(filename, result_callback):
+    import time
+    import zipfile
+    started = time.time()
+    tickbegin = started
+    MAX_ELAPSED_TIME_THRESHOLD = 0.01
+    WAIT_FOR_PERIOD = 0.02
+    z = zipfile.ZipFile(filename, 'r')
+    if time.time() - tickbegin >= MAX_ELAPSED_TIME_THRESHOLD:
+        yield BWWaitForPeriod(WAIT_FOR_PERIOD)
+        tickbegin = time.time()
+    broken = []
+    for zi in z.infolist():
+        f = z.open(zi.filename)
+        checksum = calccrc(f)
+        f.close()
+        if checksum != zi.CRC:
+            broken.append(zi.filename)
+            break
+        if time.time() - tickbegin >= MAX_ELAPSED_TIME_THRESHOLD:
+            yield BWWaitForPeriod(WAIT_FOR_PERIOD)
+            tickbegin = time.time()
+
+    z.close()
+    elapsed = time.time() - started
+    result_callback(broken)
+
+
+@BWCoroutine
+def filecrc(filename, result_callback):
+    import time
+    import zlib
+    r = 0
+    blocksize = 1024
+    time_consume_limit = 0.1
+    sleep_period = 0.2
+    tickbegin = time.time()
+    try:
+        with open(filename, 'rb') as f:
+            data = f.read(blocksize)
+            while data:
+                r = zlib.crc32(data, r)
+                if time.time() - tickbegin >= time_consume_limit:
+                    yield BWWaitForPeriod(sleep_period)
+                    tickbegin = time.time()
+                data = f.read(blocksize)
+
+    except:
+        r = 0
+
+    result_callback(r & 4294967295L)
+
+
+def _showLogoScreen(active, fadeIn = True, radius = 500, autoWorldDraw = True):
+    global GUICore
+    GUICore.showLoaderGUI(guiType=soProgressBars.TYPE_SPACE, distance=radius, timeout=100, spaceName='default', doShow=active)
+
+
+def onCameraSpaceChange(spaceID, spaceSettings):
+    global gpd
+    gpd.cameraSpaceID = spaceID
+    for listener in gpd.cameraSpaceChangeListeners.keys():
+        listener(spaceID, spaceSettings)
+
+
+def addCameraSpaceChangeListener(listener):
+    gpd.cameraSpaceChangeListeners[listener] = ''
+
+
+def delCameraSpaceChangeListener(listener):
+    try:
+        if 'gpd' in globals():
+            del gpd.cameraSpaceChangeListeners[listener]
+    except:
+        print 'Error in BWPersonality::delCameraSpaceChangeListener(listener)'
+
+
+def setWeather(data):
+    wset = data.split('|')
+    spaceID = int(wset[0])
+    temp = float(wset[1])
+    tempDelay = float(wset[2])
+    windXvelo = float(wset[3])
+    windZvelo = float(wset[4])
+    windGustiness = float(wset[5])
+    systems = {}
+
+    def setSubsystem(systems, wsys, idx, wset):
+        systems[wsys] = {}
+        systems[wsys]['weight'] = float(wset[idx])
+        systems[wsys][1] = float(wset[idx + 1])
+        systems[wsys][2] = float(wset[idx + 2])
+        systems[wsys][3] = float(wset[idx + 3])
+        systems[wsys][4] = float(wset[idx + 4])
+        systems[wsys]['afterTime'] = float(wset[idx + 5])
+
+    idx = 6
+    wsys = 'CLEAR'
+    setSubsystem(systems, wsys, idx, wset)
+    idx = 12
+    wsys = 'CLOUD'
+    setSubsystem(systems, wsys, idx, wset)
+    idx = 18
+    wsys = 'RAIN'
+    setSubsystem(systems, wsys, idx, wset)
+    idx = 24
+    wsys = 'STORM'
+    setSubsystem(systems, wsys, idx, wset)
+    w = BigWorld.weather(spaceID)
+    w.temperature(temp, tempDelay)
+    w.windAverage(windXvelo, windZvelo)
+    w.windGustiness(windGustiness)
+
+    def setWeatherSystem(systemName, data):
+        w.system(systemName).direct(data['weight'], (data[1],
+         data[2],
+         data[3],
+         data[4]), data['afterTime'])
+
+    setWeatherSystem('CLEAR', systems['CLEAR'])
+    setWeatherSystem('CLOUD', systems['CLOUD'])
+    setWeatherSystem('RAIN', systems['RAIN'])
+    setWeatherSystem('STORM', systems['STORM'])
+
+
+def handlePrePreferences(preference):
+    settings.writePreferencesDict(preference)
+    BigWorld.prefs = preference
+
+
+def init(scriptsConfig, engineConfig, prefs, loadingScreenGUI = None):
+    game._on_init(scriptsConfig, engineConfig, prefs, loadingScreenGUI)
+
+
+def start():
+    game._on_start()
+
+
+def fini():
+    game._on_fini()
+
+
+def onChangeEnvironments(inside):
+    pass
+
+
+def onRecreateDevice():
+    game.on_recreate_device()
+    return True
+
+
+def onGeometryMapped(spaceID, spacePath):
+    game.on_geometry_mapped(spaceID, spacePath)
+
+
+def spaceName(spaceID):
+    global geometriesMapped
+    if geometriesMapped.has_key(spaceID):
+        return geometriesMapped[spaceID]
+    else:
+        return ''
+
+
+def handleInputLangChangeEvent():
+    return True
+
+
+def handleKeyEvent(event):
+    if not game.GUICore:
+        return False
+    else:
+        key = event.key
+        mods = event.modifiers
+        down = event.isKeyDown()
+        BigWorld.key_modifiers = event.modifiers
+        delayKick()
+        if key == KEY_P and mods == MODIFIER_ALT and down:
+            runWatch()
+            return True
+        if key == KEY_F4 and down:
+            runWatch()
+        if key == KEY_F11 and down and mods == 7:
+            GUICore.loginGUI.showServ()
+        if key == KEY_L and mods == MODIFIER_ALT and down:
+            return True
+        if key == KEY_RETURN and mods == MODIFIER_ALT:
+            return False
+        if key == KEY_O and mods == MODIFIER_ALT and down:
+            showStats(True)
+            return True
+        handled = GUICore.handleKeyEvent(event)
+        if handled:
+            return True
+        handled = GUI.handleKeyEvent(event)
+        if handled:
+            return handled
+        if game.is_cursor_mouse() and key in [KEY_LEFTMOUSE, KEY_MIDDLEMOUSE, KEY_RIGHTMOUSE]:
+            return True
+        handled = PyGUI.handleKeyEvent(event)
+        if handled:
+            return True
+        player = BigWorld.player()
+        if key == KEY_ESCAPE and down:
+            if not isinstance(player, PlayerAvatar):
+                return True
+            elif hasattr(player, 'tutorial_owner') and player.tutorial_owner:
+                player.tutorialListener(2, [u'passTutorial', None])
+                return True
+            else:
+                GUICore.showIngameMenu()
+                return True
+        if isinstance(player, PlayerAvatar):
+            if hasattr(player, 'artefactExtractor'):
+                if player.artefactExtractor:
+                    if down:
+                        handled = player.artefactExtractor.handle_key(key)
+            if handled:
+                return True
+            settings.keyBindings.callActionForKeyState(key)
+        return False
+
+
+def kick():
+    print 'called kick!'
+    BigWorld.delayed_kick = None
+    BigWorld.delayed_kick_time = 0
+    game.disconnect()
+    return
+
+
+def delayKick(t = 900.0):
+    current = BigWorld.time()
+    if current - getattr(BigWorld, 'delayed_kick_time', 0) >= 1.0:
+        callback(kick, t, cancel_existing=True)
+        BigWorld.delayed_kick_time = current
+
+
+def handleMouseEvent(event):
+    if not game.GUICore:
+        return False
+    else:
+        dx = event.dx
+        dy = event.dy
+        dz = event.dz
+        position = event.cursorPosition
+        delayKick()
+        PyGUI.handleMouseEvent(event)
+        GUICore.handleMouseEvent(event)
+        handled = GUI.handleMouseEvent(event)
+        if not handled and BigWorld.player() != None and isinstance(BigWorld.player(), PlayerAvatar):
+            handled = BigWorld.player().handleMouseEvent(event)
+        return handled
+
+
+def handleAxisEvent(event):
+    return True
+
+
+def handleCharEvent(char, key, mods):
+    return GUICore.handleCharEvent(char, key, mods)
+
+
+def onStreamComplete(id, desc, data):
+    if desc == 'lmsg':
+        gpd.sendLowerMessageColored(data, 4294901760L)
+    if desc == 'codemsg':
+        gpd.sendLowerMessageColored(data, 4294901760L)
+        gui_jokes.msgBox(u'SERVER', lc('BWPersonality.%s' % data))
+    if desc == 'weather':
+        setWeather(data)
+
+
+def expandMacros(stringIn):
+    patt = '\\$([%s])' % ''.join(PYTHON_MACROS.keys())
+
+    def repl(match):
+        return PYTHON_MACROS[match.group(1)]
+
+    return re.sub(patt, repl, stringIn)
+
+
+def setMouseTargeting():
+    BigWorld.target.skeletonCheckEnabled = True
+    BigWorld.target.source = BigWorld.MouseTargettingMatrix()
+    BigWorld.target.isEnabled = True
+    BigWorld.target.maxDistance = 80.0
+
+
+@BWCoroutine
+def _destroyCharSelectSpace():
+    global CS_SpaceReady
+    global CS_SpaceID
+    global CS_SpaceCamera
+    print 'start _destroyCharSelectSpace', CS_SpaceID, CS_SpaceReady
+    if CS_SpaceID != None and not CS_SpaceReady:
+        yield BWWaitForCondition(lambda : CS_SpaceReady)
+    CS_SpaceReady = False
+    if CS_SpaceCamera == BigWorld.camera():
+        BigWorld.camera(None)
+    CS_SpaceCamera = None
+    if CS_SpaceID != None:
+        BigWorld.clearSpace(CS_SpaceID)
+        BigWorld.releaseSpace(CS_SpaceID)
+        CS_SpaceID = None
+        print 'start clearSpace'
+    return
+
+
+def showErrorMessage(text, timeout = 4):
+    if text:
+        print (u'errorMsg = "%s"' % text).encode('utf-8')
+        GUICore.closeMsgBox('error')
+        msgbox_templates.text_and_ok_timeout('error', lc('tmplocal.strings.str55'), text, timeout)
+
+
+@BWCoroutine
+def monitorWorldLoading():
+    while BigWorld.player() != None:
+        if BigWorld.spaceLoadStatus() < 0.7:
+            farPlane = BigWorld.projection().farPlane
+            BigWorld.worldDrawEnabled(False)
+            _showLogoScreen(True, False, farPlane)
+            yield BWWaitForPeriod(0.1)
+
+    return
+
+
+@BWCoroutine
+def _proceedToLevel():
+    global music
+    GUICore.showLoaderGUI(guiType=soProgressBars.TYPE_SPACE, distance=500, timeout=100, spaceName='default', doShow=True)
+    if music.menuTrack is not None:
+        music.stopAllMusic()
+        music.startRandomTrack()
+    yield
+    return
+
+
+def on_key_pressed_while_guilock(event):
+    if event.key == KEY_ESCAPE and event.isKeyDown():
+        game.disconnect()
+
+
+def bind_game_event_listeners():
+    """ Please, feel free to add YOUR game event listeners here, or later dynamically
+            Listeners order in one event is preserved
+    """
+    game.addListener('onInit', PostProcessing.init)
+    game.addListener('onInit', gpd.onInit)
+    game.addListener('onInit', settings.onInit)
+    game.addListener('onInit', game.init_mouse)
+    game.addListener('onInit', game.init_weather)
+    game.addListener('onInit', music.onInit)
+    game.addListener('afterInitGUICore', game.bindGameGUIListeners)
+    game.addListener('afterInitGUICore', settings.onGuiCoreInitialized)
+    game.addListener('afterInitGUICore', game.init_default_username)
+    game.addListener('afterInitGUICore', game.enable_world_drawing)
+    game.addListener('afterInitGUICore', game.hide_loading_gui)
+    game.addListener('afterInitGUICore', partial(callback, game.set_cursor_mouse, 0.5))
+    game.addListener('onConnecting', game.on_connecting)
+    game.addListener('onConnecting', music.stopAllMusic)
+    game.addListener('onConnected', game.on_connected)
+    game.addListener('onDisconnected', game.on_disconnected)
+    game.addListener('onDisconnected', music.startMenuTrack)
+    game.addListener('onDisconnected', game.clear_avatar_effects)
+    game.addListener('onPlayerAccount', game.clear_avatar_effects)
+    game.addListener('onPlayerAccount', game.char_select_mgr.on_account_login)
+    game.addListener('onEnterCharacterSelect', game.on_enter_character_select)
+    game.addListener('onGeometryMapped', game.onGeometryMappedStuff)
+    game.addListener('onRecreateDevice', settings.onRecreateDevice)
+    game.addListener('onRecreateDevice', game.__temp_reinit_crosshair_slide__)
+    game.addListener('onFini', game.unbindGUIListeners)
+    game.addListener('onFini', music.stopAllMusic)
+    game.addListener('onFini', BigWorld.savePreferences)
+    game.addListener('onFini', BigWorld.resetEntityManager)
+    game.addListener('onFini', BigWorld.clearAllSpaces)
+    game.addListener('onFini', PostProcessing.fini)
+
+
+class Game(object, Listener.Listenable):
+    """
+    generic game events, listeners and functions here
+    
+    Game is Listenable, so you can use regular game.addListener(eventname, func) interface to bind your callbacks.
+    here are events:
+    onInit()
+    onRecreateDevice()
+    afterInitGUICore()
+    onEnterLoginScreen()
+    onConnecting()
+    onConnected(success)
+    onGeometryMapped(spaceID, spacePath)
+    onPlayerAccount()
+    onPlayerAccountTimeout()
+    onWorldDrawEnabled()
+    onWorldDrawDisabled()
+    onMouseCursor(visible)
+    onEnterCharacterSelect()
+    
+    onGUILock()
+    onGUIUnlock()
+    
+     onEnterGameWorld()
+     onLoadingGuiVisible()
+     onLoadingGuiInvisible()
+    onDisconnected()
+    
+    """
+
+    def __init__(self):
+        Listener.Listenable.__init__(self)
+        self.scriptsConfig = None
+        self.state = self.Constants.STATE_OFFLINE
+        self.dHost = None
+        self.init_called = False
+        self.GUICore = None
+        self.spaces_by_name = {}
+        self.spaces_by_id = {}
+        self.space_handles = {}
+        self.current_space_id = 0
+        self.current_space_name = ''
+        self.last_period_name = ''
+        self.cameras = {}
+        self.spacenum = 0
+        self.is_gui_locked = False
+        self.disconnectMsgID = False
+        self.playersdata = None
+        return
+
+    def _on_init(self, scriptsConfig, engineConfig, prefs, loadingGUI):
+        self.scriptsConfig = scriptsConfig
+        self.engineConfig = engineConfig
+        self.prefs = prefs
+        self.loadingGUI = loadingGUI
+        self.init_called = True
+        self.lastWeatherSync = {}
+        self.disable_world_drawing()
+        self.listeners.onInit()
+        self.badwords = []
+        try:
+            f = open('badwords.txt')
+            self.badwords = filter(None, [ l.strip().decode('utf-8') for l in f.readlines() ])
+            f.close()
+        except:
+            self.badwords = []
+
+        try:
+            self.initGUICore()
+        except:
+            print ':: Error in initGUICore; resuming Personality script init'
+            traceback.print_exc()
+
+        self.listeners.afterInitGUICore()
+        return
+
+    def init_weather(self):
+        from Weather import weather
+        gpd.weather = weather()
+        self.UpdateWeatherByPeriods()
+
+    def _on_start(self):
+        self.listeners.onStart()
+
+    def _on_fini(self):
+        self.listeners.onFini()
+
+    def on_recreate_device(self):
+        self.listeners.onRecreateDevice()
+
+    def on_geometry_mapped(self, spaceID, spacePath):
+        self.spaces_by_id[spaceID] = spacePath
+        spaces_by_this_name = self.spaces_by_name.get(spacePath, []) + [spaceID]
+        self.spaces_by_name[spacePath] = spaces_by_this_name
+        self.listeners.onGeometryMapped(spaceID, spacePath)
+
+    def on_remove_geometry_mapped(self, spaceID):
+        spacePath = self.get_space_name(spaceID)
+        if len(spacePath) > 0 and self.spaces_by_name.get(spacePath):
+            del self.spaces_by_name[spacePath]
+        if self.spaces_by_id.get(spaceID):
+            del self.spaces_by_id[spaceID]
+        if geometriesMapped.get(spaceID):
+            del geometriesMapped[spaceID]
+
+    def get_space_name(self, space_id):
+        return self.spaces_by_id.get(space_id)
+
+    def get_spaces_by_name(self, space_name):
+        return self.spaces_by_name.get(space_name)
+
+    def __temp_reinit_crosshair_slide__(self):
+        if hasattr(BigWorld.player(), 'initCrosshairSlide'):
+            BigWorld.player().initCrosshairSlide()
+
+    def init_mouse(self):
+        self.cursor_mode = None
+        BigWorld.worldDrawEnabled(False)
+        self.mcursor = GUI.mcursor()
+        self.mcursor.shape = 'arrow'
+        self.dcursor = BigWorld.dcursor()
+        self.set_cursor_direction()
+        return
+
+    def init_default_username(self):
+        self.default_username = Settings().getSetting('username')
+        if self.default_username:
+            GUICore.setLoginData(dict(login=self.default_username, pwd='', autoSave=True))
+
+    def clear_avatar_effects(self):
+        self.GUICore.clearPPEffects()
+        self.GUICore.delCharacterEffect()
+
+    def set_cursor_mouse(self, cur_mouse = True):
+        if self.cursor_mode != cur_mouse:
+            self.mcursor.visible = cur_mouse
+            self.mcursor.clipped = not cur_mouse
+            BigWorld.setCursor(self.mcursor if cur_mouse else self.dcursor)
+            self.cursor_mode = cur_mouse
+            self.listeners.onMouseCursor(cur_mouse)
+
+    def set_cursor_direction(self, cur_direction = True):
+        self.set_cursor_mouse(not cur_direction)
+
+    def is_cursor_mouse(self):
+        return self.cursor_mode
+
+    def enable_world_drawing(self):
+        BigWorld.worldDrawEnabled(True)
+        self.listeners.onWorldDrawEnabled()
+
+    def disable_world_drawing(self):
+        BigWorld.worldDrawEnabled(False)
+        self.listeners.onWorldDrawDisabled()
+
+    def hide_loading_gui(self):
+        self.loadingGUI.script.stop()
+
+    def initGUICore(self):
+        global GUICore
+        GUICore = soGUICore(GUI.Window())
+        __import__('__main__').GUICore = GUICore
+        self.GUICore = GUICore
+        game.addListener('onRecreateDevice', GUICore.onNewDevice)
+        xText = GUI.Text('')
+        xText.horizontalPositionMode = 'CLIP'
+        xText.verticalPositionMode = 'CLIP'
+        xText.horizontalAnchor = 'CENTER'
+        xText.verticalAnchor = 'CENTER'
+        xText.heightMode = 'CLIP'
+        xText.colour = (255.0, 0.0, 0.0, 255.0)
+        xText.visible = True
+        xText.position = (0.0, 0.6, 0.0)
+        xText.font = 'ruRU_calibri_large.font'
+        gpd.outPut = xText
+        xText = GUI.Text('')
+        xText.horizontalPositionMode = 'CLIP'
+        xText.verticalPositionMode = 'CLIP'
+        xText.horizontalAnchor = 'CENTER'
+        xText.verticalAnchor = 'CENTER'
+        xText.colour = (255.0, 0.0, 0.0, 255.0)
+        xText.visible = True
+        xText.position = (0.0, -0.6, 0.0)
+        xText.font = 'ruRU_calibri_large.font'
+        gpd.outputLower = xText
+        outPutShader = GUI.AlphaShader()
+        outPutShader.mode = 'ALL'
+        outPutShader.speed = 8
+        outPutShader.value = 255.0
+        outPutShader.reset()
+        gpd.outPut.addShader(outPutShader, 'hider')
+        outputLowerShader = GUI.AlphaShader()
+        outputLowerShader.mode = 'ALL'
+        outputLowerShader.speed = 6
+        outputLowerShader.value = 255.0
+        outputLowerShader.reset()
+        gpd.outputLower.addShader(outputLowerShader, 'hider')
+        GUI.addRoot(gpd.outPut)
+        GUI.addRoot(gpd.outputLower)
+        GUICore.start()
+
+    def finalizeGUICore(self):
+        global GUICore
+        self.GUICore.finalize()
+        GUICore = None
+        return
+
+    def bindGameGUIListeners(self):
+        self.GUICore.addListener('loginEvent', self.loginEventListener)
+        self.GUICore.addListener('ingameMenuEvent', self.ingameMenuHandler)
+        self.GUICore.addListener('queueEvent', self.queueEventListener)
+
+    def unbindGUIListeners(self):
+        self.GUICore.removeListener('loginEvent', self.loginEventListener)
+        self.GUICore.removeListener('ingameMenuEvent', self.ingameMenuHandler)
+        self.GUICore.removeListener('queueEvent', self.queueEventListener)
+
+    def is_connecting(self):
+        return self.state == self.Constants.STATE_CONNECTING
+
+    def is_connected(self):
+        return self.state == self.Constants.STATE_ONLINE
+
+    def set_state(self, state):
+        prev_state = self.state
+        if state != prev_state:
+            self.state = state
+            if state == self.Constants.STATE_ONLINE:
+                self.listeners.onConnected(True)
+            elif state == self.Constants.STATE_CONNECTING:
+                self.listeners.onConnecting()
+            elif state == self.Constants.STATE_OFFLINE:
+                if prev_state == self.Constants.STATE_ONLINE:
+                    self.listeners.onDisconnected()
+                elif prev_state == self.Constants.STATE_CONNECTING:
+                    self.listeners.onConnected(False)
+
+    def connect(self, username, password, fast_login = None, host = None):
+        if not self.is_connected() and not self.is_connecting():
+            if not host:
+                host = self.scriptsConfig.readString('login/host')
+            else:
+                gpd.sendMessage(('server:%s' % host), **red)
+            login_data = namedtuple('LoginData', ['username', 'password'])(username, password)
+            self.set_state(self.Constants.STATE_CONNECTING)
+            self.fast_logining = fast_login
+            BigWorld.connect(host, login_data, self.__connection_callback__)
+
+    def disconnect(self, msgID = None):
+        gpd.loadingGUI.script.cancel()
+        self.GUICore.hideConfirmWindow()
+        if self.is_connected() or self.is_connecting:
+            BigWorld.disconnect()
+        self.disconnectMsgID = msgID
+
+    def __on_disconnect(self):
+        print '__on_disconnect'
+        self.set_state(self.Constants.STATE_OFFLINE)
+        if self.disconnectMsgID:
+            errormsg = lc('BWPersonality.client.disconnect_%s' % self.disconnectMsgID)
+            self.disconnectMsgID = None
+            showErrorMessage(errormsg, 0)
+        else:
+            showErrorMessage(lc('BWPersonality.client.STRING_1367_18'))
+        BigWorld.resetEntityManager(False, True)
+        BigWorld.clearAllSpaces(True)
+        if BigWorld.server() is not None:
+            BigWorld.disconnect()
+        self.loadingGUI.script.cancel()
+        self.GUICore.hideConfirmWindow()
+        return
+
+    def close(self):
+        music.stopAllMusic()
+        BigWorld.quit()
+
+    def restart(self):
+        if not getattr(self, 'restarting', False):
+            self.restarting = True
+            BigWorld.restartGame()
+
+    def __on_connect_success__(self):
+        self.set_state(self.Constants.STATE_ONLINE)
+
+    def __on_connect_failure__(self, stage, status, msg_localized):
+        self.set_state(self.Constants.STATE_OFFLINE)
+        showErrorMessage(msg_localized)
+        self.disconnect()
+
+    def __connection_callback__(self, netstage, status, serverMsg):
+        """It should be noted that this function may be called before BigWorld.connect returns"""
+        print '__connection_callback__:', netstage, status, serverMsg
+        connection_stage = (netstage, status)
+        if connection_stage in self.Constants.STAGE_ONLINE:
+            self.__on_connect_success__()
+        elif connection_stage in self.Constants.STAGE_FAILED_ANY:
+            if netstage == self.Constants.NETWORK_OFFLINE:
+                localized_msg = lc('BWPersonality.client.STRING_1364_18')
+            else:
+                localized_msg = self.Constants.human_readable.get(status, serverMsg)
+            self.__on_connect_failure__(netstage, status, localized_msg)
+        elif connection_stage in self.Constants.STAGE_CONNECTED_TO_SERVER:
+            pass
+        elif connection_stage in self.Constants.STAGE_DISCONNECT:
+            self.__on_disconnect()
+        else:
+            print 'unrecognized connection stage:', connection_stage
+
+    def on_disconnected(self):
+        self.GUICore.setGameMode(GUICore.GAMEMODE_LOGIN)
+        self.GUICore.showCharacterPicker(False)
+        self.hide_char_maker()
+        self.unlock_gui()
+
+    def on_connecting(self):
+        self.lock_gui(msg=lc('tmplocal.strings.str56'), intercepting_callback=on_key_pressed_while_guilock)
+        self.GUICore.setQueueData('')
+
+    def on_connected(self, success):
+        if success:
+            addr = BigWorld.server()
+            if self.dHost:
+                gpd.sendMessage(('server:%s' % str(addr)), **green)
+        else:
+            self.unlock_gui()
+
+    def lock_gui(self, msg = u'', intercepting_callback = None):
+        if not self.is_gui_locked:
+            self.GUICore.GUILock(True, intercepting_callback=intercepting_callback)
+            self.is_gui_locked = True
+            self.mcursor.visible = False
+            self.listeners.onGUILock()
+
+    def unlock_gui(self):
+        if self.is_gui_locked:
+            self.GUICore.GUILock(False)
+            self.is_gui_locked = False
+            self.mcursor.visible = True
+            self.listeners.onGUIUnlock()
+
+    def __on_player_avatar__(self):
+        self.listeners.onPlayerAvatar()
+        player_avatar = BigWorld.player()
+        player_avatar.addListener('onEnterSpace', self.___on_avatar_enter_space__)
+        player_avatar.addListener('onEnterWorld', self.___on_avatar_enter_space__)
+
+    def __on_player_account__(self):
+        if self.fast_logining:
+            account = BigWorld.player()
+            self.unlock_gui()
+            self.showDummyLoadingGUI()
+            account.base.beginPlay(self.fast_logining, True)
+        else:
+            self.GUICore.setGameMode(self.GUICore.GAMEMODE_LOGIN)
+            self.listeners.onPlayerAccount()
+            account = BigWorld.player()
+            conditions = {'char_list_loaded': False,
+             'space_and_camera_ready': False}
+
+            def on_charlist_loaded():
+                account.removeListener('on_account_characters_update', on_charlist_loaded)
+                conditions['char_list_loaded'] = True
+
+            def on_camera_is_set():
+                conditions['space_and_camera_ready'] = True
+
+            def check_if_we_ready_to_select_character():
+                return conditions['space_and_camera_ready'] and conditions['char_list_loaded']
+
+            def on_character_select_ready():
+                self.listeners.onEnterCharacterSelect()
+
+            wait(check_if_we_ready_to_select_character, on_character_select_ready)
+            space_id = self.map_space(MM_SPACE_CHARSELECT)
+            account.addListener('on_account_characters_update', on_charlist_loaded)
+            print 'space_id', space_id
+            account.requestCharacterList()
+            self.set_camera_on_cameranode(space_id, on_camera_is_set)
+
+    def __on_player_account_timeout__(self):
+        self.disconnect()
+
+    def on_enter_character_select(self):
+        self.GUICore.showCharacterPicker(True)
+        ac = BigWorld.player()
+        self.unlock_gui()
+
+    def map_space(self, space_name, if_not_mapped = True):
+        if if_not_mapped:
+            if not self.spaces_by_name.get(space_name):
+                existing_space_instances = []
+                if existing_space_instances:
+                    return existing_space_instances[0]
+            space_id = BigWorld.createSpace()
+            raise space_id is None and ValueError()
+        handle = BigWorld.addSpaceGeometryMapping(space_id, None, space_name)
+        self.space_handles[space_id] = handle
+        self.current_space_id = space_id
+        self.current_space_name = space_name
+        return space_id
+
+    def unmap_space(self, space_id):
+        handle = self.space_handles[space_id]
+        BigWorld.delSpaceGeometryMapping(space_id, handle)
+        BigWorld.clearSpace(space_id)
+        BigWorld.releaseSpace(space_id)
+        del self.space_handles[space_id]
+        self.on_remove_geometry_mapped(space_id)
+
+    def set_camera_on_cameranode(self, space_id, on_camera_is_set = None):
+        camera = self.cameras.get(space_id)
+        if not camera:
+            camera = BigWorld.FreeCamera()
+            self.cameras[space_id] = camera
+        camera.fixed = True
+        BigWorld.camera(camera)
+        camera.spaceID = space_id
+        camera_nodes = []
+
+        def check_if_camera_nodes_loaded():
+            loaded_nodes = [ cn for cn in BigWorld.userDataObjects.values() if isinstance(cn, CameraNode.CameraNode) ]
+            if loaded_nodes:
+                camera_nodes.extend(loaded_nodes)
+                return True
+            return False
+
+        def on_timeout_waiting_camera_nodes():
+            raise ValueError("Can't find any CameraNode on space %s" % self.spaces[space_id])
+
+        def on_nodes_loaded():
+            camera_node = camera_nodes[0]
+            m = Math.Matrix()
+            m.setRotateYPR((camera_node.yaw, camera_node.pitch, camera_node.roll))
+            m.translation = camera_node.position
+            m.invert()
+            camera.set(m)
+            BigWorld.projection().fov = camera_node.fov / 180.0 * math.pi
+            if callable(on_camera_is_set):
+                on_camera_is_set()
+
+        wait(check_if_camera_nodes_loaded, on_nodes_loaded, 60.0, on_timeout_waiting_camera_nodes)
+
+    def showDummyLoadingGUI(self):
+        self.GUICore.showLoaderGUI(guiType=soProgressBars.TYPE_DUMMY, spaceName='default')
+
+    def hideDummyLoadingGUI(self):
+        self.GUICore.showLoaderGUI(guiType=soProgressBars.TYPE_DUMMY, spaceName='default', doShow=False)
+
+    def ___on_avatar_enter_space__(self):
+        BigWorld.player().worldLoadStatus(0)
+        self.hideDummyLoadingGUI()
+        self.showWorldLoadingGUI()
+        self.GUICore.setGameMode(GUICore.GAMEMODE_INGAME)
+
+    def showWorldLoadingGUI(self):
+        GUICore.addListener('loaderGUIEvent', self.afterPlayerAvatarSpaceLoaded)
+        GUICore.showLoaderGUI(guiType=soProgressBars.TYPE_SPACE, distance=700, timeout=200, spaceName=self.current_space_name, doShow=True, waitForReset=False)
+
+    def afterPlayerAvatarSpaceLoaded(self, event, data):
+        if event in [soGUI.soProgressBars.EVENT_FINISH, soGUI.soProgressBars.EVENT_TIMEOUT]:
+            BigWorld.player().worldLoadStatus(1)
+        elif event in [soGUI.soProgressBars.EVENT_CANCEL]:
+            self.disconnect()
+        if event in [soGUI.soProgressBars.EVENT_FINISH, soGUI.soProgressBars.EVENT_TIMEOUT, soGUI.soProgressBars.EVENT_CANCEL]:
+            self.GUICore.removeListener('loaderGUIEvent', self.afterPlayerAvatarSpaceLoaded)
+
+    def onGeometryMappedStuff(self, space_id, space_name):
+        geometriesMapped[space_id] = space_name
+        if GUICore is not None:
+            GUICore.spaceChange(space_name)
+        return
+
+    def is_space_mapped(self, space_name):
+        return self.spaces_by_name.get(space_name)
+
+    def UpdateWeatherByPeriods(self):
+        print 'UpdateWeatherByPeriods'
+        try:
+            self.UpdateTimeWeather()
+        except:
+            traceback.print_exc()
+
+        BigWorld.callback(1800, self.UpdateWeatherByPeriods)
+
+    def UpdateTimeWeather(self, hours = None, minutes = None, weather_name = None):
+        if hours is None or minutes is None:
+            time = BigWorld.timeOfDay().split(':')
+            if len(time):
+                if hours is None:
+                    hours = time[0]
+                if len(time) == 2:
+                    if minutes is None:
+                        minutes = time[1]
+        if weather_name is None:
+            if self.current_space_name == '':
+                return
+            space_name = self.current_space_name
+            int_hours = int(hours)
+            int_minutes = int(minutes)
+            new_time = int_hours * 3600 + int_minutes * 60
+            new_time = new_time % 86400
+            periods_dict = SpacesConfig.getPeriodsOnSpaceName(space_name)
+            periods = []
+            for period_name, str_time in periods_dict.items():
+                if period_name == 'day' or period_name == 'night':
+                    continue
+                time_h, time_m = str_time.split(':')
+                period_time = int(time_h) * 3600 + int(time_m) * 60
+                periods.append([period_time, period_name])
+
+            periods.sort(key=lambda k: k[0])
+            for period_time, period_name in periods:
+                if new_time >= period_time:
+                    self.last_period_name = period_name
+
+            weather_config = WeatherConfig.getPeriodsOnSpaceName(space_name)
+            weather_periods = weather_config.get('periods', {})
+            weather = weather_periods.get(self.last_period_name)
+            if weather:
+                if type(weather) == list:
+                    weather = choice(weather)
+                BigWorld.player().onWeatherChanged(weather)
+        else:
+            BigWorld.player().onWeatherChanged(weather_name)
+        BigWorld.timeOfDay(str(hours) + ':' + str(minutes))
+        return
+
+    def inspect(self, obj_str):
+        if len(obj_str):
+            object_lnk = eval(obj_str)
+            if object_lnk:
+                with open(obj_str + '.txt', 'w') as file:
+                    for attr_name in dir(object_lnk):
+                        try:
+                            attr = getattr(object_lnk, str(attr_name))
+                            attr_args = inspect.getargspec(attr)
+                            file.write(str(type(attr)) + ' ' + attr_name + inspect.formatargspec(*attr_args) + '\n')
+                        except:
+                            file.write(str(type(attr)) + ' ' + attr_name + '\n')
+
+    @BWCoroutine
+    def CreateEntity(self, entity_type, entity_spaceID, entity_pos, entity_dir, entity_name, player = False, safe_ground = False):
+        entityID = BigWorld.createEntity(entity_type, entity_spaceID, 0, entity_pos, entity_dir, {'name': entity_name})
+        while True:
+            yield BWWaitForPeriod(0.1)
+            ground_detected = False
+            if safe_ground:
+                position_to = Vector3(entity_pos[0], entity_pos[1] - 1500, entity_pos[2])
+                position_from = Vector3(entity_pos[0], entity_pos[1] + 1500, entity_pos[2])
+                coll = BigWorld.collide(entity_spaceID, position_from, position_to)
+                if coll:
+                    entity_pos = coll[0]
+                    ground_detected = True
+            else:
+                ground_detected = True
+            if entityID in BigWorld.entities.keys():
+                if player:
+                    BigWorld.player(BigWorld.entities[entityID])
+                    if BigWorld.player() and hasattr(BigWorld.player(), 'physics'):
+                        BigWorld.player().physics.teleport(Vector3(entity_pos))
+                        self.UpdateTimeWeather()
+                if ground_detected:
+                    break
+
+    @BWCoroutine
+    def TeleportTo(self, position, entity):
+        while True:
+            yield BWWaitForPeriod(0.1)
+            if entity and hasattr(entity, 'physics'):
+                if entity.physics:
+                    entity.physics.teleport(Vector3(position[0], entity.position[1], position[2]))
+                position_to = Vector3(position[0], entity.position[1] - 1500, position[2])
+                position_from = Vector3(position[0], entity.position[1] + 1500, position[2])
+                coll = BigWorld.collide(entity.spaceID, position_from, position_to)
+                if coll:
+                    entity.physics.teleport(coll[0])
+                    break
+
+    def JumpToSpace(self, space_name):
+        if self.current_space_id != 0 and self.current_space_id != self.is_space_mapped(space_name):
+            BigWorld.resetEntityManager(False, False)
+            self.unmap_space(self.current_space_id)
+        spaceID = self.map_space(space_name)
+        GUICore.showLoaderGUI(guiType=soProgressBars.TYPE_SPACE, distance=700, timeout=200, spaceName=self.current_space_name, doShow=True, waitForReset=False)
+        return spaceID
+
+    def JumpToNextSpace(self, position, next_space_name):
+        position_to = Vector3(position[0], BigWorld.player().position[1], position[2])
+        if self.current_space_name != next_space_name:
+            name = BigWorld.player().name
+            yaw = BigWorld.player().yaw
+            pitch = BigWorld.player().pitch
+            spaceID = self.JumpToSpace(next_space_name)
+            if not BigWorld.player():
+                self.CreateEntity(self, 'Avatar', spaceID, position_to, (0.0, pitch, yaw), name, True, True).run()
+            for player_name, data in self.playersdata.items():
+                if data['space_name'] == next_space_name and player_name != name:
+                    self.CreateEntity(self, 'Avatar', spaceID, data['position'], (0.0, data.get('pitch', 0.0), data.get('yaw', 0.0)), player_name).run()
+
+        elif BigWorld.player():
+            self.TeleportTo(self, position_to, BigWorld.player()).run()
+
+    def _startOffline(self, username):
+        print '_startOffline'
+        space_name = self.scriptsConfig.readString('space')
+        player_type = self.scriptsConfig.readString('player/entityType')
+        start_pos = self.scriptsConfig.readVector3('player/startPosition')
+        start_dir = self.scriptsConfig.readVector3('player/startDirection')
+        safe_ground = True
+        try:
+            with codecs.open('playersdata.json', 'r', 'utf-8') as playersdata_file:
+                self.playersdata = json.load(playersdata_file, encoding='utf-8')
+                data = self.playersdata[username]
+                space_name = data.get('space_name', space_name)
+                start_pos = data.get('position', start_pos)
+                safe_ground = False
+                start_dir = (0.0, data.get('pitch', 0.0), data.get('yaw', 0.0))
+        except:
+            traceback.print_exc()
+
+        spaceID = self.JumpToSpace(space_name)
+        self.CreateEntity(self, player_type, spaceID, start_pos, start_dir, username, True, safe_ground).run()
+        for player_name, data in self.playersdata.items():
+            if data['space_name'] == space_name and player_name != username:
+                self.CreateEntity(self, 'Avatar', spaceID, data['position'], (0.0, data.get('pitch', 0.0), data.get('yaw', 0.0)), player_name).run()
+
+    def loginEventListener(self, event, data, fast_login_character = None):
+        if event == soGUI.soLoginScreen.EVENT_LOGIN:
+            username, password, save = data
+            if not fast_login_character:
+                if save:
+                    settings.setSetting('username', username, flush=True)
+                else:
+                    settings.setSetting('username', '', flush=True)
+            self._startOffline(username)
+        elif event == soGUI.soLoginScreen.EVENT_QUITGAME:
+            game.close()
+
+    def ingameMenuHandler(self, event, data):
+        if event == soGUI.soIngameMainMenu.EVENT_RESUME:
+            return
+        if event == soGUI.soIngameMainMenu.EVENT_OPTIONS:
+            self.GUICore.showOptions()
+        elif event == soGUI.soIngameMainMenu.EVENT_LOGOFF:
+            if self.fast_logining:
+                self.disconnect()
+            else:
+                self.GUICore.showLoaderGUI(guiType=soProgressBars.TYPE_SPACE, distance=500, timeout=100, spaceName='default', doShow=True)
+                p = BigWorld.player()
+                p.base.onReturnToMainMenu()
+                self.lock_gui()
+        elif event == soGUI.soIngameMainMenu.EVENT_QUIT:
+            self.close()
+
+    def queueEventListener(self, event, data):
+        if event == soQueueScreen.EVENT_CANCEL:
+            self.disconnect()
+            self.GUICore.showQueueBox(False, True)
+            self.GUICore.setQueueData('')
+
+    def show_char_maker(self):
+        self.GUICore.addListener('charMakerEvent', self.charMakerEventListener)
+        self.GUICore.showCharacterMaker(True)
+
+    def hide_char_maker(self):
+        self.GUICore.removeListener('charMakerEvent', self.charMakerEventListener)
+        self.GUICore.showCharacterMaker(False)
+
+    class CharSelect(object):
+
+        def __init__(self):
+            self.account = None
+            self.selected_id = None
+            self.chars = []
+            return
+
+        def on_account_login(self):
+            self.gui_bind()
+            self.account = BigWorld.player()
+            self.bind_account_listeners()
+
+        def bind_account_listeners(self):
+            a = self.account
+            if isinstance(a, Account.Account):
+                a.addListener('on_account_leave_world', self.on_account_leave_world)
+                a.addListener('on_account_characters_update', self.on_char_list_update)
+                a.addListener('onBecomeNonPlayer', self.on_account_leave_world)
+
+        def unbind_account_listeners(self):
+            a = self.account
+            if isinstance(a, Account.Account):
+                a.removeListener('on_account_leave_world', self.on_account_leave_world)
+                a.removeListener('on_account_characters_update', self.on_char_list_update)
+                a.removeListener('onBecomeNonPlayer', self.on_account_leave_world)
+
+        def on_account_leave_world(self):
+            self.gui_unbind()
+            self.account = None
+            self.selected_id = None
+            self.chars = []
+            return
+
+        def on_char_list_update(self):
+            new_char_list = [ char.name for char in self.account.characterList ]
+            new_id = None
+            if self.selected_id is not None:
+                selected_charname = self.chars[self.selected_id]
+                try:
+                    new_id = new_char_list.index(selected_charname)
+                except ValueError:
+                    pass
+
+            else:
+                try:
+                    new_id = new_char_list.index(BigWorld.player().lastCharacterName)
+                except ValueError:
+                    pass
+
+            self.chars = new_char_list
+            if new_id is None and self.chars:
+                new_id = 0
+            if new_id is None:
+                self.select(None)
+            else:
+
+                def is_dummy_loaded():
+                    return self.account.dummy()
+
+                def select_char():
+                    self.select(new_id)
+
+                wait(is_dummy_loaded, select_char, 60.0, select_char)
+            return
+
+        def select(self, i):
+            self.selected_id = i
+            self.gui_update_char_list()
+            character_name = self.chars[i] if i is not None else None
+            d = self.account.dummy()
+            if d:
+                char = self.account.character(character_name) if character_name else None
+                d.set_character(char)
+                self.show_charstats(char.charstats if char else None)
+            return
+
+        def show_charstats(self, stats_dict):
+
+            def getStringtime(t):
+                days = int(t / 60 / 60 / 24)
+                hour = int(t / 60 / 60)
+                min = int(t / 60)
+                if days > 0:
+                    return str(days) + lc('GUI.General.DAYS_SHORTENING')
+                elif hour > 0:
+                    return str(hour) + lc('GUI.General.HOURS_SHORTENING')
+                else:
+                    return str(min) + lc('GUI.General.MINUTES_SHORTENING')
+
+            if BigWorld.player().premium['DateEnd'] - time() < 0:
+                endPremium = lc('soCharacterScreen.soGUI.notActive')
+            else:
+                endPremium = getStringtime(BigWorld.player().premium['DateEnd'] - time())
+            game.GUICore.setCharPickerCharInfo([(lc('soCharacterScreen.soGUI.STRING_639_24'), ''),
+             ('', ''),
+             (lc('soCharacterScreen.soGUI.HP'), '%2.2f' % stats_dict['maxhp']),
+             (lc('soCharacterScreen.soGUI.STRING_696_13'), '%2.2f' % stats_dict['maxstamina']),
+             (lc('soCharacterScreen.soGUI.speed'), '%2.2f' % stats_dict['maxspeed']),
+             (lc('soCharacterScreen.soGUI.capacity'), '%2.2f' % stats_dict['maxweight']),
+             (lc('soCharacterScreen.soGUI.Exp'), 'x%2.2f' % BigWorld.player().premium['ExpCoefficient']),
+             (lc('soCharacterScreen.soGUI.endPremium'), '%s' % endPremium)] if stats_dict and stats_dict['maxhp'] else [])
+            game.GUICore.charPicker.setGold()
+
+        def ask_tutorial(self):
+            if all([ chr['isTutorialPassed'] == AccountConst.ACCOUNT_TUTORIAL_NOT_PASSED for chr in self.account.characterList ]):
+                self.begin_play(AccountConst.ACCOUNT_TUTORIAL_NOT_PASSED)
+                return
+            else:
+                character = self.account.character(self.chars[self.selected_id])
+                if character['isTutorialPassed'] == AccountConst.ACCOUNT_TUTORIAL_NOT_PASSED:
+                    GUICore.showMsgBox(id='ask_tutorial', isModal=False, x=0.0, y=0.0, width=300, caption=lc('BWPersonality.client.ASK_TUTORIAL_HEADER'), forcePos=False, parent_gui_id=None, bind_to_parent=False, btn_set=[{'type': MESSAGEBOX.BTN_YES,
+                      'width': 80}, {'type': MESSAGEBOX.BTN_NO,
+                      'width': 80}], timeout=10, closeBox=True, defaultAction=MESSAGEBOX.BTN_NO, addControls=[{'type': MESSAGEBOX.ADDCONTROL_TEXTFIELD,
+                      'ID': 'main_txt_field',
+                      'text': lc('BWPersonality.client.ASK_TUTORIAL_QUESTION'),
+                      'hAnchor': MESSAGEBOX.ANCHOR_CENTER}], callback=self.on_tutorial_event)
+                else:
+                    self.begin_play()
+                return
+
+        def on_tutorial_event(self, event, data):
+            if event == MESSAGEBOX.EVENT_BTNPRESS:
+                if data['btn'] == MESSAGEBOX.BTN_YES:
+                    self.begin_play(AccountConst.ACCOUNT_TUTORIAL_NOT_PASSED)
+                else:
+                    self.begin_play(AccountConst.ACCOUNT_TUTORIAL_PASSED)
+
+        def begin_play(self, pass_tutorial = AccountConst.ACCOUNT_TUTORIAL_PASSED):
+            game.showDummyLoadingGUI()
+            game.GUICore.showCharacterPicker(False)
+            self.account.base.beginPlay(self.chars[self.selected_id], pass_tutorial)
+
+        def on_char_picker_event(self, event, data):
+            if event == CHAR_PICKER.EVENT_BACK:
+                game.disconnect()
+            elif event == CHAR_PICKER.EVENT_SELECT:
+                id = data['id']
+                if id < len(self.chars):
+                    self.select(id)
+                else:
+                    self.on_char_picker_event(CHAR_PICKER.EVENT_NEW, {})
+                    return
+            elif event in [CHAR_PICKER.EVENT_PLAY, CHAR_PICKER.EVENT_USE]:
+                if self.selected_id is not None:
+                    if self.account.characterList[self.selected_id]['renameRequired']:
+                        msgbox_templates.text_and_ok_timeout('rename_required', lc('tmplocal.strings.str57'), lc('tmplocal.strings.str58'), 10.0)
+                    else:
+                        self.ask_tutorial()
+                elif not len(self.chars):
+                    gpd.sendMessage(lc('BWPersonality.client.STRING_417_20'), **red)
+                else:
+                    gpd.sendMessage(lc('BWPersonality.client.STRING_419_20'), **red)
+            elif event == CHAR_PICKER.EVENT_NEW:
+                game.GUICore.showCharacterPicker(False)
+                game.show_char_maker()
+                self.account.clear_availability_cache()
+                self.account.dummy().set_character(None)
+                self.account.dummy().set_default_models_from_gui(game.GUICore.getCurrentCharMakerAppearance())
+            elif event == CHAR_PICKER.EVENT_DELETE:
+                if self.selected_id is not None:
+                    avatar_name = self.chars[self.selected_id]
+
+                    def deleter(characterName):
+                        if avatar_name == characterName:
+                            self.account.deleteCharacter(avatar_name)
+                            self.select(None)
+                        else:
+                            gpd.sendMessage(lc('BWPersonality.client.STRING_439_21'), **red)
+                        return
+
+                    inputBox(lc('BWPersonality.client.STRING_441_12') + ' ' + avatar_name, lc('BWPersonality.client.STRING_441_84'), deleter, 'delete.character', True)
+            elif event == CHAR_PICKER.EVENT_RESTORE:
+                if self.selected_id is not None:
+                    avatar_name = self.chars[self.selected_id]
+
+                    def restore(event):
+                        if event == gui_jokes.askUserYesNo.YES:
+                            self.account.RestoreCharacter(avatar_name)
+                            self.select(None)
+                        return
+
+                    gui_jokes.askUserYesNo('', lc('BWPersonality.client.Restore') + ' ' + avatar_name, restore)
+            elif event == CHAR_PICKER.EVENT_PREMIUM:
+
+                def activatePremium(event):
+                    if event == gui_jokes.askUserYesNo.YES:
+                        self.account.activatePremiumAccount()
+
+                gui_jokes.askUserYesNo(lc('BWPersonality.client.PremiumTitle'), lc('BWPersonality.client.ActivatePremium'), activatePremium)
+            return
+
+        def gui_bind(self):
+            GUICore.addListener('charPickerEvent', self.on_char_picker_event)
+
+        def gui_unbind(self):
+            GUICore.removeListener('charPickerEvent', self.on_char_picker_event)
+
+        def gui_update_char_list(self):
+            GUICore.clearCharPickerCharacters()
+            from gui_const import CHAR_PICKER
+            for i in xrange(self.account.charSlots):
+                is_empty = i >= len(self.chars)
+                rename_required = not is_empty and self.account.characterList[i]['renameRequired']
+                charname = '+' if is_empty else self.chars[i]
+                states = {CHAR_PICKER.SLOT_STATE_SELECTED: i == self.selected_id,
+                 CHAR_PICKER.SLOT_STATE_EMPTY: is_empty,
+                 CHAR_PICKER.SLOT_STATE_DELETED: self.getDeletionRemainingTime(charname) > 0}
+                data = {'name': charname,
+                 'info1': lc('BWPersonality.client.requiresRenaming') if rename_required else '',
+                 'info2': '',
+                 'time': self.getDeletionRemainingTime(charname),
+                 'states': states}
+                GUICore.setCharPickerCharacter(i, data)
+
+        def getDeletionRemainingTime(self, name):
+            for char in self.account.characterList:
+                if char['name'] == name:
+                    return int(char['deletion_remaining_time'])
+
+        def select_character(self, id):
+            if self.selected_id == id:
+                return
+            else:
+                if self.selected_id is not None:
+                    GUICore.setCharPickerCharacter(self.selected_id, {'states': {CHAR_PICKER.SLOT_STATE_SELECTED: False}})
+                GUICore.setCharPickerCharacter(id, {'states': {CHAR_PICKER.SLOT_STATE_SELECTED: True}})
+                self.selected_id = id
+                return
+
+    def charMakerEventListener(self, event, data):
+        if event == CHAR_MAKER.EVENT_CANCEL:
+            game.hide_char_maker()
+            self.GUICore.showCharacterPicker(True)
+            self.char_select_mgr.select(self.char_select_mgr.selected_id)
+        elif event == CHAR_MAKER.EVENT_FINISH:
+            account = BigWorld.player()
+
+            def on_avatar_created(success, errcode = None, msg = None):
+                self.unlock_gui()
+                if not success:
+                    msgbox_templates.text_and_ok_timeout('CHAR_MAKER.EVENT_FINISH', lc('tmplocal.strings.str59'), msg, None)
+                else:
+                    game.hide_char_maker()
+                    self.GUICore.showCharacterPicker(True)
+                    self.char_select_mgr.select(self.char_select_mgr.selected_id)
+                return
+
+            self.lock_gui(lc('BWPersonality.client.createChar'))
+            account.createNewCharacter(on_avatar_created)
+            account.lastCharacterName = account.dummy().name
+            game.char_select_mgr.select(None)
+        elif event == CHAR_MAKER.EVENT_APPEARANCE:
+            account = BigWorld.player()
+
+            def send_event_to_dummy():
+                account.dummy().update_from_GUI(data['choiceGroup'], data['var'])
+
+            wait(lambda : account.dummy(), send_event_to_dummy)
+        elif event == CHAR_MAKER.EVENT_STAGESWITCH:
+            if data['stage'] == CHAR_MAKER.STAGE_1:
+                self.GUICore.showCharacterMaker(True)
+            elif data['stage'] == CHAR_MAKER.STAGE_3:
+                self.GUICore.setCharMakerNickHint(lc('BWPersonality.client.writeCharName'))
+        elif event == CHAR_MAKER.EVENT_GENDER_CHOICE:
+            print 'EVENT_GENDER_CHOICE', data
+        elif event == CHAR_MAKER.EVENT_ORIGINATION_CHOICE:
+            print 'EVENT_ORIGINATION_CHOICE', data
+        elif event == CHAR_MAKER.EVENT_NICKNAME:
+            username = data[u'nick']
+            acc = BigWorld.player()
+            acc.dummy().name = username
+            if username:
+                response = validators.AvatarName.validate(username)
+                if response['valid']:
+                    uid = response['uid']
+
+                    def on_avatar_name_availability_checked(uid, available):
+                        if uid == self.__last_uid_check__:
+                            if available:
+                                self.GUICore.setCharMakerDescription(third=lc('BWPersonality.client.nameAvailableForRegistration'))
+                            else:
+                                self.GUICore.setCharMakerDescription(third=lc('BWPersonality.client.nameNotAvailableForRegistration'))
+
+                    def check_avatar_name_availability():
+                        acc.checkAvatarNameAvailable(uid, on_avatar_name_availability_checked)
+
+                    additional_delay = 0
+                    callback(check_avatar_name_availability, 0.5 + additional_delay, cancel_existing=True, id='check_avatar_name_availability')
+                    self.GUICore.setCharMakerDescription(third=lc('BWPersonality.client.checkAvailabilityName'))
+                    self.__last_uid_check__ = uid
+                else:
+                    self.GUICore.setCharMakerDescription(third=response['error'][1])
+                    self.__last_uid_check__ = None
+            else:
+                self.GUICore.setCharMakerDescription(third=u'')
+        return
+
+    char_select_mgr = CharSelect()
+
+    class Constants:
+        STATE_OFFLINE = 0
+        STATE_CONNECTING = 1
+        STATE_ONLINE = 2
+        NETWORK_OFFLINE = 0
+        NETWORK_CONNECTING = 1
+        NETWORK_ONLINE = 2
+        NETWORK_DISCONNECT = 6
+        NOT_SET = 'NOT_SET'
+        LOGGED_ON = 'LOGGED_ON'
+        CONNECTION_FAILED = 'CONNECTION_FAILED'
+        DNS_LOOKUP_FAILED = 'DNS_LOOKUP_FAILED'
+        UNKNOWN_ERROR = 'UNKNOWN_ERROR'
+        CANCELLED = 'CANCELLED'
+        ALREADY_ONLINE_LOCALLY = 'ALREADY_ONLINE_LOCALLY'
+        PUBLIC_KEY_LOOKUP_FAILED = 'PUBLIC_KEY_LOOKUP_FAILED'
+        LOGIN_MALFORMED_REQUEST = 'LOGIN_MALFORMED_REQUEST'
+        LOGIN_BAD_PROTOCOL_VERSION = 'LOGIN_BAD_PROTOCOL_VERSION'
+        LOGIN_REJECTED_NO_SUCH_USER = 'LOGIN_REJECTED_NO_SUCH_USER'
+        LOGIN_REJECTED_INVALID_PASSWORD = 'LOGIN_REJECTED_INVALID_PASSWORD'
+        LOGIN_REJECTED_ALREADY_LOGGED_IN = 'LOGIN_REJECTED_ALREADY_LOGGED_IN'
+        LOGIN_REJECTED_BAD_DIGEST = 'LOGIN_REJECTED_BAD_DIGEST'
+        LOGIN_REJECTED_DB_GENERAL_FAILURE = 'LOGIN_REJECTED_DB_GENERAL_FAILURE'
+        LOGIN_REJECTED_DB_NOT_READY = 'LOGIN_REJECTED_DB_NOT_READY'
+        LOGIN_REJECTED_ILLEGAL_CHARACTERS = 'LOGIN_REJECTED_ILLEGAL_CHARACTERS'
+        LOGIN_REJECTED_SERVER_NOT_READY = 'LOGIN_REJECTED_SERVER_NOT_READY'
+        LOGIN_REJECTED_NO_BASEAPPS = 'LOGIN_REJECTED_NO_BASEAPPS'
+        LOGIN_REJECTED_BASEAPP_OVERLOAD = 'LOGIN_REJECTED_BASEAPP_OVERLOAD'
+        LOGIN_REJECTED_CELLAPP_OVERLOAD = 'LOGIN_REJECTED_CELLAPP_OVERLOAD'
+        LOGIN_REJECTED_BASEAPP_TIMEOUT = 'LOGIN_REJECTED_BASEAPP_TIMEOUT'
+        LOGIN_REJECTED_BASEAPPMGR_TIMEOUT = 'LOGIN_REJECTED_BASEAPPMGR_TIMEOUT'
+        LOGIN_REJECTED_DBMGR_OVERLOAD = 'LOGIN_REJECTED_DBMGR_OVERLOAD'
+        LOGIN_REJECTED_LOGINS_NOT_ALLOWED = 'LOGIN_REJECTED_LOGINS_NOT_ALLOWED'
+        LOGIN_REJECTED_RATE_LIMITED = 'LOGIN_REJECTED_RATE_LIMITED'
+        human_readable = {NOT_SET: 'Not set',
+         LOGGED_ON: lc('BWPersonality.client.STRING_1309_23'),
+         CONNECTION_FAILED: lc('BWPersonality.client.STRING_1310_29'),
+         DNS_LOOKUP_FAILED: lc('BWPersonality.client.STRING_1311_29'),
+         UNKNOWN_ERROR: lc('BWPersonality.client.STRING_1312_26'),
+         CANCELLED: lc('BWPersonality.client.STRING_1313_23'),
+         ALREADY_ONLINE_LOCALLY: lc('BWPersonality.client.STRING_1314_32'),
+         PUBLIC_KEY_LOOKUP_FAILED: lc('BWPersonality.client.STRING_1315_34'),
+         LOGIN_MALFORMED_REQUEST: lc('BWPersonality.client.STRING_1316_33'),
+         LOGIN_BAD_PROTOCOL_VERSION: lc('BWPersonality.client.STRING_1317_35'),
+         LOGIN_REJECTED_NO_SUCH_USER: lc('BWPersonality.client.STRING_1318_36'),
+         LOGIN_REJECTED_INVALID_PASSWORD: lc('BWPersonality.client.STRING_1319_39'),
+         LOGIN_REJECTED_ALREADY_LOGGED_IN: lc('BWPersonality.client.STRING_1320_40'),
+         LOGIN_REJECTED_BAD_DIGEST: lc('BWPersonality.client.STRING_1321_35'),
+         LOGIN_REJECTED_DB_GENERAL_FAILURE: lc('BWPersonality.client.STRING_1322_41'),
+         LOGIN_REJECTED_DB_NOT_READY: lc('BWPersonality.client.STRING_1323_36'),
+         LOGIN_REJECTED_ILLEGAL_CHARACTERS: lc('BWPersonality.client.STRING_1324_41'),
+         LOGIN_REJECTED_SERVER_NOT_READY: lc('BWPersonality.client.STRING_1325_39'),
+         LOGIN_REJECTED_NO_BASEAPPS: lc('BWPersonality.client.STRING_1327_35'),
+         LOGIN_REJECTED_BASEAPP_OVERLOAD: lc('BWPersonality.client.STRING_1328_39'),
+         LOGIN_REJECTED_CELLAPP_OVERLOAD: lc('BWPersonality.client.STRING_1329_39'),
+         LOGIN_REJECTED_BASEAPP_TIMEOUT: lc('BWPersonality.client.STRING_1330_38'),
+         LOGIN_REJECTED_BASEAPPMGR_TIMEOUT: lc('BWPersonality.client.STRING_1331_41'),
+         LOGIN_REJECTED_DBMGR_OVERLOAD: lc('BWPersonality.client.STRING_1332_38'),
+         LOGIN_REJECTED_LOGINS_NOT_ALLOWED: lc('BWPersonality.client.STRING_1333_41')}
+        STAGE_FAILED_NETWORK = set([(NETWORK_OFFLINE, NOT_SET),
+         (NETWORK_CONNECTING, CONNECTION_FAILED),
+         (NETWORK_CONNECTING, DNS_LOOKUP_FAILED),
+         (NETWORK_CONNECTING, UNKNOWN_ERROR),
+         (NETWORK_CONNECTING, CANCELLED),
+         (NETWORK_CONNECTING, ALREADY_ONLINE_LOCALLY),
+         (NETWORK_CONNECTING, PUBLIC_KEY_LOOKUP_FAILED),
+         (NETWORK_CONNECTING, LOGIN_MALFORMED_REQUEST),
+         (NETWORK_CONNECTING, LOGIN_BAD_PROTOCOL_VERSION)])
+        STAGE_FAILED_CREDENTIALS = set([(NETWORK_CONNECTING, LOGIN_REJECTED_ALREADY_LOGGED_IN), (NETWORK_CONNECTING, LOGIN_REJECTED_INVALID_PASSWORD), (NETWORK_CONNECTING, LOGIN_REJECTED_NO_SUCH_USER)])
+        STAGE_FAILED_SERVER = set([(NETWORK_CONNECTING, LOGIN_REJECTED_BAD_DIGEST),
+         (NETWORK_CONNECTING, LOGIN_REJECTED_DB_GENERAL_FAILURE),
+         (NETWORK_CONNECTING, LOGIN_REJECTED_DB_NOT_READY),
+         (NETWORK_CONNECTING, LOGIN_REJECTED_ILLEGAL_CHARACTERS),
+         (NETWORK_CONNECTING, LOGIN_REJECTED_SERVER_NOT_READY),
+         (NETWORK_CONNECTING, LOGIN_REJECTED_NO_BASEAPPS),
+         (NETWORK_CONNECTING, LOGIN_REJECTED_BASEAPP_OVERLOAD),
+         (NETWORK_CONNECTING, LOGIN_REJECTED_CELLAPP_OVERLOAD),
+         (NETWORK_CONNECTING, LOGIN_REJECTED_BASEAPP_TIMEOUT),
+         (NETWORK_CONNECTING, LOGIN_REJECTED_BASEAPPMGR_TIMEOUT),
+         (NETWORK_CONNECTING, LOGIN_REJECTED_DBMGR_OVERLOAD),
+         (NETWORK_CONNECTING, LOGIN_REJECTED_LOGINS_NOT_ALLOWED)])
+        STAGE_FAILED_ANY = STAGE_FAILED_CREDENTIALS | STAGE_FAILED_NETWORK | STAGE_FAILED_SERVER
+        STAGE_CONNECTED_TO_SERVER = set([(NETWORK_CONNECTING, LOGGED_ON)])
+        STAGE_ONLINE = set([(NETWORK_ONLINE, NOT_SET)])
+        STAGE_DISCONNECT = set([(NETWORK_DISCONNECT, NOT_SET)])
+
+
+class LoginData(object):
+
+    def __init__(self, username = '', password = ''):
+        self.username = username
+        self.password = password
+        self.charName = password
+        self.inactivityTimeout = 60.0
+
+
+game = Game()
+
+class BWPersonalityActionHandler(BWKeyBindings.BWActionHandler):
+
+    @BWKeyBindings.BWKeyBindingAction('ToggleCharacterGUI')
+    def toggleCharScreen(self, isDown):
+        if isDown:
+            return
+        GUICore.toggleCharScreen()
+
+    @BWKeyBindings.BWKeyBindingAction('ToggleSkillGUI')
+    def toggleSkillGUI(self, isDown):
+        if isDown:
+            return
+        GUICore.toggleSkillGUI()
+
+    @BWKeyBindings.BWKeyBindingAction('ToggleClanGUI')
+    def toggleClanGUI(self, isDown):
+        if isDown:
+            return
+        GUICore.toggleClanGUI()
+
+    @BWKeyBindings.BWKeyBindingAction('QuestJournal')
+    def toggleQuestLog(self, isDown):
+        if isDown:
+            return
+        GUICore.toggleQuestLog()
+
+    @BWKeyBindings.BWKeyBindingAction('ShowHelp')
+    def showHelp(self, isDown):
+        if isDown:
+            return
+        else:
+            doShow = True
+            if GUICore.helpGUI is None:
+                doShow = True
+            else:
+                doShow = not GUICore.helpGUI.component.visible
+            GUICore.showHelpGUI(doShow)
+            GUICore.setBestCursor()
+            return
+
+    @BWKeyBindings.BWKeyBindingAction('GlobalMap')
+    def toggleMap(self, isDown):
+        if isDown:
+            return
+        GUICore.toggleMap()
+
+    @BWKeyBindings.BWKeyBindingAction('InventoryShow')
+    def toggleInventory(self, isDown):
+        if isDown:
+            return
+        GUICore.toggleInventory()
+
+    @BWKeyBindings.BWKeyBindingAction('showCraft')
+    def toggleCraft(self, isDown):
+        if isDown:
+            return
+        GUICore.toggleCraft()
+
+    @BWKeyBindings.BWKeyBindingAction('showTPC')
+    def toggleTPC(self, isDown):
+        return None
+
+    @BWKeyBindings.BWKeyBindingAction('togglePrivateStore')
+    def togglePrivateStore(self, isDown):
+        pass
+
+    @BWKeyBindings.BWKeyBindingAction('toggleGUI')
+    def toggleGUI(self, isDown):
+        if isDown:
+            return
+        if BigWorld.spaceLoadStatus() > 0.9:
+            if GUICore.hiddenState:
+                GUICore.show()
+            else:
+                GUICore.hide()
+
+
+@BWKeyBindings.BWKeyBindingAction('ShowStats')
+def showStats(isDown):
+    global statsWindow
+    if statsWindow is None:
+        statsWindow = GUI.load('soGUI/stats_window.gui')
+        if statsWindow.script is None:
+            statsWindow = GUI.load('soGUI/stats_window.gui')
+        GUI.addRoot(statsWindow)
+    if isDown:
+        statsWindow.script.active(not statsWindow.script.isActive)
+        statsWindow.visible = statsWindow.script.isActive
+    return
+
+
+gpd = globalPersonalityData()
+GUICore = None
+settings = Settings()
+bind_game_event_listeners()
+try:
+    import __debug
+except ImportError:
+    pass
+else:
+
+    def load_debug_gui():
+        from __debug import gui
+
+
+    game.addListener('afterInitGUICore', load_debug_gui)
