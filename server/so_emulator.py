@@ -143,10 +143,10 @@ ENTITY_DEFS_ROOT = (
 AVATAR_ENTITY_DEF = AvatarEntityDefinition(ENTITY_DEFS_ROOT)
 NPC_ENTITY_DEF = AvatarEntityDefinition(ENTITY_DEFS_ROOT, "NPC")
 NPC_ENTITY_TYPE_ID = 3
-# PlayerAvatar.pyc now creates the tutorial actors through BigWorld's native
-# client-only entity path after geometry mapping. Keep the decoded network
-# builders for protocol research, but do not create a second cached roster.
-TUTORIAL_NPC_NETWORK_ENABLED = False
+# Tutorial NPCs are authoritative server-owned entities.  Do not create them
+# from PlayerAvatar.pyc: BigWorld's normal lifecycle is enterAoI first and
+# createEntity afterwards.
+TUTORIAL_NPC_NETWORK_ENABLED = True
 
 PLAYER_CLIENT_SERVER_PROPERTY_COUNT = (
     AVATAR_ENTITY_DEF.client_property_count
@@ -211,52 +211,52 @@ class TutorialNPC:
 # the draisine and Haron's corpse transform inside the house chunk.
 TUTORIAL_NPCS = (
     TutorialNPC(
-        0x40010001, "Zevaka", (-68.804001, -1.499511, 117.475388),
+        1001, "Zevaka", (-68.804001, -1.499511, 117.475388),
         yaw=-3.030917,
         head=6, body=0, legs=1,
     ),
     TutorialNPC(
-        0x40010002, "Soldat_Noob", (-61.9033, -2.4801, 87.0193),
+        1002, "Soldat_Noob", (-61.9033, -2.4801, 87.0193),
         yaw=-2.468817,
         weapon=2, head=49, body=39, hands=0, legs=0, boots=0,
     ),
     TutorialNPC(
-        0x40010003, "Dejurnyi", (32.5, 4.862886, 61.0),
+        1003, "Dejurnyi", (32.5, 4.862886, 61.0),
         yaw=-0.709703,
         weapon=2, head=49, body=39, hands=0, legs=0, boots=0,
     ),
     TutorialNPC(
-        0x40010004, "Trader_Noob", (36.02113, 4.862886, 58.851074),
+        1004, "Trader_Noob", (36.02113, 4.862886, 58.851074),
         yaw=-0.194092,
         head=0, hands=0, boots=0, body=45, legs=0,
     ),
     TutorialNPC(
-        0x40010005, "Aid_trader_noob", (30.8758, 4.862886, 55.0822),
+        1005, "Aid_trader_noob", (30.8758, 4.862886, 55.0822),
         yaw=-0.755271,
         head=10, hands=0, boots=0, body=48, legs=0,
     ),
     TutorialNPC(
-        0x40010006, "Repairman_Noob", (27.1875, 4.862886, 59.3451),
+        1006, "Repairman_Noob", (27.1875, 4.862886, 59.3451),
         yaw=-0.805763,
         head=0, hands=0, boots=0, body=57, legs=0,
     ),
     TutorialNPC(
-        0x40010007, "Ammo_trader_noob", (36.4713, 4.862886, 72.3113),
+        1007, "Ammo_trader_noob", (36.4713, 4.862886, 72.3113),
         yaw=-2.292016,
         head=8, body=41, legs=2,
     ),
     TutorialNPC(
-        0x40010008, "Armor_trader_noob", (43.3354, 4.862886, 72.0319),
+        1008, "Armor_trader_noob", (43.3354, 4.862886, 72.0319),
         yaw=2.896250,
         head=11, body=44, legs=2,
     ),
     TutorialNPC(
-        0x40010009, "Provodnik_Noob", (201.561188, 3.800753, 228.807495),
+        1009, "Provodnik_Noob", (201.561188, 3.800753, 228.807495),
         yaw=0.373340,
         head=10, body=9, legs=2,
     ),
     TutorialNPC(
-        0x4001000A, "Haron_Corpse", (177.12561, 1.726031, 128.862808),
+        1010, "Haron_Corpse", (177.12561, 1.726031, 128.862808),
         yaw=3.049426,
         head=13, body=0, legs=1, flags=1, dead=True,
     ),
@@ -2339,9 +2339,9 @@ def handle_base_channel_packet(data: bytes, addr: tuple[str, int],
             TUTORIAL_NPC_NETWORK_ENABLED
             and
             session.play_geometry == PLAYER_WORLD_STATION_GEOMETRY
-            and not session.tutorial_npc_details_sent
+            and not session.tutorial_npc_enters_sent
         ):
-            send_tutorial_npc_details(base_sock, session, addr)
+            send_tutorial_npc_enters(base_sock, session, addr)
         return
 
     if (
@@ -2356,6 +2356,8 @@ def handle_base_channel_packet(data: bytes, addr: tuple[str, int],
             f">>> TUTORIAL NPC ENTER ACK: "
             f"cumulativeAck={packet.cumulative_ack}"
         )
+        if not session.tutorial_npc_details_sent:
+            send_tutorial_npc_details(base_sock, session, addr)
         return
 
     if (
@@ -2371,8 +2373,6 @@ def handle_base_channel_packet(data: bytes, addr: tuple[str, int],
             f"cumulativeAck={packet.cumulative_ack}, "
             f"count={len(TUTORIAL_NPCS)}.\n"
         )
-        if not session.tutorial_npc_enters_sent:
-            send_tutorial_npc_enters(base_sock, session, addr)
         return
 
     # Stage 10 startup state machine.

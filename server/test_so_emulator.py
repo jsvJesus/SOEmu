@@ -233,12 +233,13 @@ class PlayerWireTests(unittest.TestCase):
         self.assertEqual(struct.unpack_from("<i", message, 1)[0], npc.entity_id)
         self.assertEqual(message[-1], 0)
 
-    def test_tutorial_npcs_use_reserved_client_only_entity_ids(self):
-        # BigWorld 1.9/2.0 reserves IDs above 2^30 for entities that can
-        # enter the world without a BaseApp requestEntityUpdate round trip.
+    def test_tutorial_npcs_use_server_owned_entity_ids(self):
+        # BigWorld reserves IDs >= (1 << 30) + 1 for client-only entities.
+        # NPCs sent by the emulator must stay below that range.
         ids = [npc.entity_id for npc in emu.TUTORIAL_NPCS]
+        first_client_id = (1 << 30) + 1
 
-        self.assertTrue(all(entity_id >= (1 << 30) + 1 for entity_id in ids))
+        self.assertTrue(all(3 < entity_id < first_client_id for entity_id in ids))
         self.assertEqual(len(ids), len(set(ids)))
 
     def test_tutorial_npc_create_uses_volatile_wire_format(self):

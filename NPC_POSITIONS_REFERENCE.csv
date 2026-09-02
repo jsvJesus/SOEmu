@@ -1,0 +1,5 @@
+npc_hint,marker_source,map_x,map_y,map_z,p1_x,p1_y,p1_z,meaning
+Trader_Noob,so_origins 00000000o.chunk SoundNode npc/hello_player,36.0211296081543,4.8628950119018555,58.85107421875,36.02113,4.862886,58.851074,"marker matches p1 X/Z; this is a sound/interaction landmark, not proven original server spawn"
+Provodnik_Noob,so_origins 00020002o.chunk SoundNode npc/hello_player + chunk offset,201.5611879825592,3.8335719108581543,228.8074951171875,201.561188,3.800753,228.807495,"marker matches p1 X/Z; not proven original server spawn"
+Zevaka,so_origins ffff0001o.chunk SoundNode npc/hello_player + chunk offset,-68.80400085449219,-1.517578125,117.47538757324219,-68.804001,-1.499511,117.475388,"marker matches p1 X/Z; not proven original server spawn"
+Soldat_Noob,so_origins ffff0000o.chunk SoundNode npc/hello_player + chunk offset,-60.990966796875,-1.5322265625,84.62181091308594,-61.9033,-2.4801,87.0193,"nearby greeting marker only; p1 actor position differs, so do not overwrite blindly"
