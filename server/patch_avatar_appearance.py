@@ -1,14 +1,15 @@
 """Patch the 0.6.5.3 client so persisted character appearance is respected.
 
 The shipped Python 2.6 bytecode reads PACKED_AVATAR_MODEL.type_id and then
-discards it in favour of hard-coded clothes/head defaults.  This is a
-same-size bytecode patch, so the rest of Avatar.pyc and its marshal layout are
-left untouched.
+discards it in favour of hard-coded clothes/head defaults. Valid type IDs must
+win, while zero keeps the original per-slot fallback. The patch changes only
+the target function's marshalled code string.
 """
 
 from __future__ import annotations
 
 import argparse
+import struct
 from pathlib import Path
 
 
@@ -43,23 +44,131 @@ BROKEN_CODE = NEW_CODE
 NEW_CODE = BROKEN_CODE.replace(bytes.fromhex("7c0006"), bytes.fromhex("7c0600"))
 
 
+def _build_fallback_code() -> bytes:
+    replacements = {
+        # head: heads.preset_by_headid[type_id or 27]
+        (126, 130): bytes.fromhex(
+            "7c06007004000164070019"
+        ),
+        # clothes: type_id or the original ItemsCatalog slot fallback.
+        (154, 164): bytes.fromhex(
+            "7c0600700b000174000069090064080019"
+        ),
+        (188, 198): bytes.fromhex(
+            "7c0600700b0001740000690a0064080019"
+        ),
+        (222, 232): bytes.fromhex(
+            "7c0600700b0001740000690b0064080019"
+        ),
+        (256, 266): bytes.fromhex(
+            "7c0600700b0001740000690c0064080019"
+        ),
+    }
+
+    ranges = sorted(replacements)
+
+    def relocated(offset: int) -> int:
+        return offset + sum(
+            len(replacements[(start, end)]) - (end - start)
+            for start, end in ranges
+            if end <= offset
+        )
+
+    output = bytearray()
+    cursor = 0
+
+    for start, end in ranges:
+        output.extend(NEW_CODE[cursor:start])
+        output.extend(replacements[(start, end)])
+        cursor = end
+
+    output.extend(NEW_CODE[cursor:])
+
+    relative_jumps = {93, 110, 111, 112, 120}
+    absolute_jumps = {113, 119}
+    offset = 0
+
+    while offset < len(NEW_CODE):
+        opcode = NEW_CODE[offset]
+        size = 3 if opcode >= 90 else 1
+
+        if not any(start <= offset < end for start, end in ranges):
+            new_offset = relocated(offset)
+
+            if opcode in relative_jumps:
+                argument = int.from_bytes(
+                    NEW_CODE[offset + 1:offset + 3],
+                    "little",
+                )
+                old_target = offset + size + argument
+                new_target = relocated(old_target)
+                new_argument = new_target - (new_offset + size)
+                output[new_offset + 1:new_offset + 3] = struct.pack(
+                    "<H",
+                    new_argument,
+                )
+            elif opcode in absolute_jumps:
+                old_target = int.from_bytes(
+                    NEW_CODE[offset + 1:offset + 3],
+                    "little",
+                )
+                output[new_offset + 1:new_offset + 3] = struct.pack(
+                    "<H",
+                    relocated(old_target),
+                )
+
+        offset += size
+
+    return bytes(output)
+
+
+FALLBACK_CODE = _build_fallback_code()
+
+
+def _marshalled_code(code: bytes) -> bytes:
+    return b"s" + struct.pack("<I", len(code)) + code
+
+
 def patch(path: Path) -> bool:
     data = path.read_bytes()
     old_count = data.count(OLD_CODE)
     broken_count = data.count(BROKEN_CODE)
     new_count = data.count(NEW_CODE)
+    fallback_count = data.count(FALLBACK_CODE)
 
-    if old_count == 0 and broken_count == 0 and new_count == 1:
+    if (
+        old_count == 0
+        and broken_count == 0
+        and new_count == 0
+        and fallback_count == 1
+    ):
         print(f"Already patched: {path}")
         return False
-    if old_count + broken_count != 1 or new_count != 0:
+    if old_count + broken_count + new_count != 1 or fallback_count != 0:
         raise RuntimeError(
             "Unexpected Avatar.pyc layout: "
-            f"old={old_count}, broken={broken_count}, new={new_count}"
+            f"old={old_count}, broken={broken_count}, "
+            f"dynamic={new_count}, fallback={fallback_count}"
         )
 
-    source = OLD_CODE if old_count == 1 else BROKEN_CODE
-    patched = data.replace(source, NEW_CODE, 1)
+    if old_count == 1:
+        source = OLD_CODE
+    elif broken_count == 1:
+        source = BROKEN_CODE
+    else:
+        source = NEW_CODE
+
+    patched = data.replace(
+        _marshalled_code(source),
+        _marshalled_code(FALLBACK_CODE),
+        1,
+    )
+
+    if patched == data:
+        raise RuntimeError(
+            "Avatar.pyc function code was found without its marshal header"
+        )
+
     path.write_bytes(patched)
     print(f"Patched character appearance: {path}")
     return True

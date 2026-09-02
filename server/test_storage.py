@@ -1,3 +1,4 @@
+import math
 import time
 import unittest
 
@@ -40,6 +41,22 @@ class StorageValueTests(unittest.TestCase):
 
         self.assertGreater(character.deletion_remaining_time, 59.0)
         self.assertLessEqual(character.deletion_remaining_time, 60.0)
+
+    def test_world_position_rejects_non_finite_and_wild_values(self):
+        self.assertFalse(storage.is_valid_world_position((0.0, math.nan, 0.0)))
+        self.assertFalse(storage.is_valid_world_position((0.0, math.inf, 0.0)))
+        self.assertFalse(storage.is_valid_world_position((0.0, 1e30, 0.0)))
+        self.assertTrue(storage.is_valid_world_position((10.0, 20.0, 30.0)))
+
+    def test_position_write_guard_raises_before_database_access(self):
+        repository = storage.MariaDBRepository(storage.MariaDBConfig())
+
+        with self.assertRaises(storage.StorageError):
+            repository.update_position(
+                1,
+                "spaces/so_origins",
+                (0.0, math.nan, 0.0),
+            )
 
 
 if __name__ == "__main__":

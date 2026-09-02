@@ -1,8 +1,0 @@
-* text=auto
-*.pyc binary
-*.pyc_dis text linguist-language=Python diff
-*.pyc_dis_failed text linguist-language=Python diff
-*.def text linguist-language=XML diff
-*.xml text diff
-*.json text diff
-*.sql text diff

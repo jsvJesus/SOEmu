@@ -5,6 +5,7 @@ import argparse
 import getpass
 import hashlib
 import json
+import math
 import os
 import re
 import select
@@ -107,7 +108,7 @@ PLAYER_CLIENT_PONG_TOP_INDEX = 61
 PLAYER_CLIENT_PONG_SUB_INDEX = 79
 PLAYER_CLIENT_PONG_MESSAGE_ID = 0x80 | PLAYER_CLIENT_PONG_TOP_INDEX
 
-# BaseAppExtInterface::avatarUpdateImplicit is Coord (3 FLOAT32),
+# BaseAppExtInterface::avatarUpdateImplicit is Coord (3 little-endian FLOAT32),
 # YawPitchRoll (3 UINT8), and refNum (UINT8).
 AVATAR_UPDATE_IMPLICIT_MESSAGE_ID = 2
 AVATAR_UPDATE_IMPLICIT_BODY_LENGTH = 16
@@ -140,6 +141,12 @@ ENTITY_DEFS_ROOT = (
 )
 
 AVATAR_ENTITY_DEF = AvatarEntityDefinition(ENTITY_DEFS_ROOT)
+NPC_ENTITY_DEF = AvatarEntityDefinition(ENTITY_DEFS_ROOT, "NPC")
+NPC_ENTITY_TYPE_ID = 3
+# PlayerAvatar.pyc now creates the tutorial actors through BigWorld's native
+# client-only entity path after geometry mapping. Keep the decoded network
+# builders for protocol research, but do not create a second cached roster.
+TUTORIAL_NPC_NETWORK_ENABLED = False
 
 PLAYER_CLIENT_SERVER_PROPERTY_COUNT = (
     AVATAR_ENTITY_DEF.client_property_count
@@ -158,41 +165,129 @@ PLAYER_NAME_PROPERTY_INDEX = (
 )
 
 
+DEFAULT_MODEL_TYPE_IDS = (
+    27,
+    200010,
+    200205,
+    110247,
+    110251,
+)
+
+
 SAFE_DEFAULT_MODELS_WIRE = struct.pack(
     "<15i",
-    0, 0, 18,
-    0, 0, 200006,
-    0, 0, 110258,
-    0, 0, 110248,
-    0, 0, 110253,
+    *(
+        value
+        for type_id in DEFAULT_MODEL_TYPE_IDS
+        for value in (0, 0, type_id)
+    ),
+)
+
+
+@dataclass(frozen=True)
+class TutorialNPC:
+    entity_id: int
+    npc_name: str
+    position: tuple[float, float, float]
+    yaw: float = 0.0
+    npc_type: int = 1
+    weapon: int = 0
+    head: int = 1
+    hands: int = 1
+    boots: int = 1
+    body: int = 1
+    armor: int = 0
+    legs: int = 1
+    cap: int = 0
+    mask: int = 0
+    backpack: int = 0
+    flags: int = 3
+    dead: bool = False
+
+
+# The original BaseApp spawned these characters; BaseNPCPoint/BaseTraderPoint
+# data is not present in the client chunks. Placements below are reconstructed
+# from stable map landmarks: station counters, the fireplace behind the Kamaz,
+# the draisine and Haron's corpse transform inside the house chunk.
+TUTORIAL_NPCS = (
+    TutorialNPC(
+        0x40010001, "Zevaka", (-68.804001, -1.499511, 117.475388),
+        yaw=-3.030917,
+        head=6, body=0, legs=1,
+    ),
+    TutorialNPC(
+        0x40010002, "Soldat_Noob", (-61.9033, -2.4801, 87.0193),
+        yaw=-2.468817,
+        weapon=2, head=49, body=39, hands=0, legs=0, boots=0,
+    ),
+    TutorialNPC(
+        0x40010003, "Dejurnyi", (32.5, 4.862886, 61.0),
+        yaw=-0.709703,
+        weapon=2, head=49, body=39, hands=0, legs=0, boots=0,
+    ),
+    TutorialNPC(
+        0x40010004, "Trader_Noob", (36.02113, 4.862886, 58.851074),
+        yaw=-0.194092,
+        head=0, hands=0, boots=0, body=45, legs=0,
+    ),
+    TutorialNPC(
+        0x40010005, "Aid_trader_noob", (30.8758, 4.862886, 55.0822),
+        yaw=-0.755271,
+        head=10, hands=0, boots=0, body=48, legs=0,
+    ),
+    TutorialNPC(
+        0x40010006, "Repairman_Noob", (27.1875, 4.862886, 59.3451),
+        yaw=-0.805763,
+        head=0, hands=0, boots=0, body=57, legs=0,
+    ),
+    TutorialNPC(
+        0x40010007, "Ammo_trader_noob", (36.4713, 4.862886, 72.3113),
+        yaw=-2.292016,
+        head=8, body=41, legs=2,
+    ),
+    TutorialNPC(
+        0x40010008, "Armor_trader_noob", (43.3354, 4.862886, 72.0319),
+        yaw=2.896250,
+        head=11, body=44, legs=2,
+    ),
+    TutorialNPC(
+        0x40010009, "Provodnik_Noob", (201.561188, 3.800753, 228.807495),
+        yaw=0.373340,
+        head=10, body=9, legs=2,
+    ),
+    TutorialNPC(
+        0x4001000A, "Haron_Corpse", (177.12561, 1.726031, 128.862808),
+        yaw=3.049426,
+        head=13, body=0, legs=1, flags=1, dead=True,
+    ),
 )
 
 
 def normalise_avatar_models_wire(models: bytes) -> bytes:
-    if len(models) == 60:
-        values = struct.unpack("<15i", models)
-        type_ids = (
-            values[2],
-            values[5],
-            values[8],
-            values[11],
-            values[14],
-        )
-
-        if all(type_id > 0 for type_id in type_ids):
-            return models
-
-        log(
-            "STAGE 20: rejecting invalid defaultModels "
-            f"type_ids={type_ids!r}; using safe fallback"
-        )
-    else:
+    if len(models) != 60:
         log(
             "STAGE 20: rejecting invalid defaultModels "
             f"length={len(models)}; using safe fallback"
         )
+        return SAFE_DEFAULT_MODELS_WIRE
 
-    return SAFE_DEFAULT_MODELS_WIRE
+    values = list(struct.unpack("<15i", models))
+    replaced: list[tuple[int, int]] = []
+
+    for slot, fallback_type_id in enumerate(DEFAULT_MODEL_TYPE_IDS):
+        type_index = slot * 3 + 2
+
+        if values[type_index] <= 0:
+            replaced.append((slot, values[type_index]))
+            values[type_index] = fallback_type_id
+
+    if replaced:
+        log(
+            "STAGE 20: defaultModels used client fallbacks for "
+            f"slots={replaced!r}"
+        )
+
+    return struct.pack("<15i", *values)
 
 
 def log(msg: str = "") -> None:
@@ -448,6 +543,7 @@ class Session:
     play_pass_tutorial: int = 1
     active_character_id: int = 0
     active_default_models_wire: bytes = b""
+    active_gold_credit: int = 0
     position_dirty: bool = False
     last_position_save: float = 0.0
     player_base_sent: bool = False
@@ -463,6 +559,12 @@ class Session:
     player_space_data_sent: bool = False
     player_space_data_acked: bool = False
     player_space_data_seq: int = -1
+    tutorial_npc_enters_sent: bool = False
+    tutorial_npc_enters_acked: bool = False
+    tutorial_npc_enters_seq: int = -1
+    tutorial_npc_details_sent: bool = False
+    tutorial_npc_details_acked: bool = False
+    tutorial_npc_details_seq: int = -1
 
 
 @dataclass
@@ -649,7 +751,7 @@ def describe_baseapp_messages(session: Session, message_bytes: bytes) -> dict[st
             ]
             pos += AVATAR_UPDATE_IMPLICIT_BODY_LENGTH
 
-            x, y, z = struct.unpack_from(">fff", body, 0)
+            x, y, z = struct.unpack_from("<fff", body, 0)
             yaw, pitch, roll, ref_num = struct.unpack_from(
                 "<BBBB",
                 body,
@@ -1079,20 +1181,15 @@ def send_avatar_base_player(
 
     createBasePlayer receives the complete BASE_AND_CLIENT stream.
 
-    Avatar.name and Avatar.defaultModels are ALL_CLIENTS properties,
-    therefore BigWorld does not permit them inside BASE_PLAYER_DATA.
-    They are emitted immediately after createBasePlayer in the SAME
-    reliable Mercury bundle, before createCellPlayer can be scheduled.
+    Avatar.name and Avatar.defaultModels are cell/client properties and
+    therefore belong to createCellPlayer's property tail. Sending them as
+    standalone updates here is ineffective: an empty cell-player tail later
+    replaces them with the entity-definition defaults.
     """
     if not session.begin_play_name:
         raise RuntimeError(
             "cannot bootstrap PlayerAvatar without Avatar.name"
         )
-
-    models = normalise_avatar_models_wire(
-        session.active_default_models_wire
-    )
-    session.active_default_models_wire = models
 
     base_property_stream = (
         AVATAR_ENTITY_DEF.build_base_player_stream()
@@ -1118,27 +1215,9 @@ def send_avatar_base_player(
         + base_body
     )
 
-    name_message = build_player_top_level_property_message(
-        session,
-        PLAYER_NAME_PROPERTY_INDEX,
-        _pack_bigworld_string(session.begin_play_name),
-    )
-
-    models_message = build_player_top_level_property_message(
-        session,
-        PLAYER_DEFAULT_MODELS_PROPERTY_INDEX,
-        models,
-    )
-
-    bootstrap_messages = (
-        create_base_message
-        + name_message
-        + models_message
-    )
-
     clear, encrypted, seq = build_server_channel_packet(
         session,
-        message_bytes=bootstrap_messages,
+        message_bytes=create_base_message,
         reliable=True,
     )
 
@@ -1158,14 +1237,9 @@ def send_avatar_base_player(
         f"reliable seq={seq}, "
         f"EntityID={session.player_avatar_entity_id}, "
         f"EntityTypeID={session.player_avatar_type_id}, "
-        f"name={session.begin_play_name!r}, "
         f"BASE_PLAYER_DATA={len(base_property_stream)} bytes, "
         f"BASE properties={len(AVATAR_ENTITY_DEF.base_property_names)}, "
         f"clientProperties={PLAYER_CLIENT_SERVER_PROPERTY_COUNT}, "
-        f"nameIndex={PLAYER_NAME_PROPERTY_INDEX}, "
-        f"defaultModelsIndex={PLAYER_DEFAULT_MODELS_PROPERTY_INDEX}, "
-        f"defaultModelsHeadType="
-        f"{struct.unpack_from('<i', models, 8)[0]}, "
         f"cumAck={session.client_next_expected_seq}"
     )
 
@@ -1176,8 +1250,7 @@ def send_avatar_base_player(
 
     log(
         ">>> Stage 20 milestone A: "
-        "createBasePlayer + Avatar.name + Avatar.defaultModels "
-        "sent atomically."
+        "createBasePlayer sent with complete BASE_AND_CLIENT data."
     )
     log(
         ">>> PlayerAvatar no longer starts from an empty "
@@ -1186,11 +1259,37 @@ def send_avatar_base_player(
 
 
 def build_avatar_cell_player_message(session: Session) -> bytes:
-    """Build ClientInterface::createCellPlayer for the selected start point."""
+    """Build createCellPlayer with the complete cell/client property stream."""
+    if not session.begin_play_name:
+        raise RuntimeError(
+            "cannot create PlayerAvatar cell data without Avatar.name"
+        )
+
+    models = normalise_avatar_models_wire(
+        session.active_default_models_wire
+    )
+    session.active_default_models_wire = models
+
+    cell_property_stream = AVATAR_ENTITY_DEF.build_cell_player_stream(
+        {
+            "name": _pack_bigworld_string(session.begin_play_name),
+            "defaultModels": models,
+            "GoldCreditNumber": struct.pack(
+                "<i",
+                session.active_gold_credit,
+            ),
+            "passTutorial": struct.pack(
+                "<b",
+                session.play_pass_tutorial,
+            ),
+        }
+    )
+
     body = (
         struct.pack("<ii", session.play_space_id, 0)
         + struct.pack("<fff", *session.play_position)
         + struct.pack("<fff", 0.0, 0.0, 0.0)
+        + cell_property_stream
     )
     return bytes([6]) + struct.pack("<H", len(body)) + body
 
@@ -1201,7 +1300,7 @@ def send_avatar_cell_player(base_sock: socket.socket, session: Session,
 
     ClientInterface::createCellPlayer (ID 6) payload:
       SpaceID int32, vehicleID int32, Position3D (3 floats),
-      Direction3D (3 floats), optional cell/client property stream.
+      Direction3D (3 floats), complete cell/client property stream.
 
     Geometry is mapped by a separate reliable ClientInterface::spaceData
     message after this createCellPlayer packet is ACKed by the client.
@@ -1219,11 +1318,13 @@ def send_avatar_cell_player(base_sock: socket.socket, session: Session,
         f"EntityID(current)={session.player_avatar_entity_id}, "
         f"spaceID={session.play_space_id}, vehicleID=0, "
         f"pos={session.play_position!r}, dir=(0,0,0), "
+        f"CELL_PLAYER_DATA={len(msg) - 35} bytes, "
+        f"name={session.begin_play_name!r}, "
         f"cumAck={session.client_next_expected_seq}"
     )
     log("AVATAR CELL clear hex:\n" + hex_dump(clear))
-    log(">>> Stage 19 milestone B: createCellPlayer(spaceID=1) sent.")
-    log(">>> Waiting for its ACK before setting passTutorial.\n")
+    log(">>> Stage 20: createCellPlayer with initial properties sent.")
+    log(">>> Waiting for its ACK before confirming passTutorial.\n")
 
 
 def pack_high_top_level_property_path(index: int, property_count: int) -> bytes:
@@ -1292,6 +1393,23 @@ def build_player_top_level_property_message(
         bytes([msg_id])
         + struct.pack("<H", len(body))
         + body
+    )
+
+
+def build_player_default_models_message(session: Session) -> bytes:
+    """Build a standalone Avatar.defaultModels property update."""
+    models = session.active_default_models_wire
+
+    if len(models) != 60:
+        raise ValueError(
+            "PACKED_AVATAR_MODEL must be 60 bytes, got "
+            f"{len(models)}"
+        )
+
+    return build_player_top_level_property_message(
+        session,
+        PLAYER_DEFAULT_MODELS_PROPERTY_INDEX,
+        models,
     )
 
 
@@ -1408,6 +1526,119 @@ def send_player_space_data(base_sock: socket.socket, session: Session,
     geometry = session.play_geometry.decode("ascii")
     log(f">>> Stage 19 milestone C: {geometry} geometry mapping sent.")
     log(f">>> Expected client: onGeometryMapped + {geometry}/space.settings.\n")
+
+
+def build_tutorial_npc_enter_message(npc: TutorialNPC, alias: int) -> bytes:
+    """Build ClientInterface::enterAoI for one server-owned tutorial NPC."""
+    if not 0 <= alias < 0xFF:
+        raise ValueError("NPC entity alias must be in range 0..254")
+    return bytes([0x0A]) + struct.pack("<iB", npc.entity_id, alias)
+
+
+def _pack_yaw_pitch_roll(yaw: float, pitch: float, roll: float) -> bytes:
+    """Encode BigWorld PackedYawPitchRoll<false, 8, 8, 8>."""
+    def angle_byte(angle: float) -> int:
+        packed = math.floor(angle * 128.0 / math.pi + 0.5)
+        return packed & 0xFF
+
+    return bytes((angle_byte(yaw), angle_byte(pitch), angle_byte(roll)))
+
+
+def build_tutorial_npc_create_message(npc: TutorialNPC) -> bytes:
+    """Build volatile createEntity with NPC.def clientServer indexes."""
+    properties = {
+        "npcType": struct.pack("<b", npc.npc_type),
+        "npcName": _pack_bigworld_string(npc.npc_name),
+        "actionOnLaunch": _pack_bigworld_string(""),
+        "npcWeapon": struct.pack("<b", npc.weapon),
+        "npcHead": struct.pack("<b", npc.head),
+        "npcHands": struct.pack("<b", npc.hands),
+        "npcBoots": struct.pack("<b", npc.boots),
+        "npcBody": struct.pack("<b", npc.body),
+        "npcArmor": struct.pack("<b", npc.armor),
+        "npcLegs": struct.pack("<b", npc.legs),
+        "npcCap": struct.pack("<b", npc.cap),
+        "npcMask": struct.pack("<b", npc.mask),
+        "npcBackpack": struct.pack("<b", npc.backpack),
+        "npcFlags": struct.pack("<q", npc.flags),
+        "clanName": _pack_bigworld_string(""),
+        "fractionID": struct.pack("<i", 0),
+        "headTrackerEnable": b"\x01",
+    }
+
+    if npc.dead:
+        properties["dead"] = b"\x01"
+
+    property_stream = NPC_ENTITY_DEF.build_tagged_client_properties(
+        properties
+    )
+    create_body = (
+        b"\x00"  # BW_COMPRESSION_NONE
+        + struct.pack("<iH", npc.entity_id, NPC_ENTITY_TYPE_ID)
+        + struct.pack("<fff", *npc.position)
+        + _pack_yaw_pitch_roll(npc.yaw, 0.0, 0.0)
+        + property_stream
+    )
+    return bytes([0x08]) + struct.pack("<H", len(create_body)) + create_body
+
+
+def send_tutorial_npc_enters(base_sock: socket.socket, session: Session,
+                             addr: tuple[str, int]) -> None:
+    """Enter cached tutorial NPCs using one ordered packet per entity."""
+    first_seq = -1
+    last_seq = -1
+
+    for alias, npc in enumerate(TUTORIAL_NPCS):
+        message = build_tutorial_npc_enter_message(npc, alias)
+        clear, encrypted, seq = build_server_channel_packet(
+            session, message_bytes=message, reliable=True
+        )
+        safe_udp_sendto(
+            base_sock,
+            encrypted,
+            addr,
+            f"tutorial NPC enterAoI {npc.npc_name}",
+        )
+        if first_seq < 0:
+            first_seq = seq
+        last_seq = seq
+
+    session.tutorial_npc_enters_sent = True
+    session.tutorial_npc_enters_seq = last_seq
+    session.last_server_send = time.time()
+    log(
+        f"TX TUTORIAL NPC ENTERS: reliable seq={first_seq}..{last_seq}, "
+        f"count={len(TUTORIAL_NPCS)}, cumAck={session.client_next_expected_seq}"
+    )
+    log(
+        ">>> Tutorial NPC AoI: "
+        + ", ".join(npc.npc_name for npc in TUTORIAL_NPCS)
+        + ".\n"
+    )
+
+
+def send_tutorial_npc_details(base_sock: socket.socket, session: Session,
+                              addr: tuple[str, int]) -> None:
+    """Create all announced tutorial NPCs in one ordered reliable bundle."""
+    messages = b"".join(
+        build_tutorial_npc_create_message(npc)
+        for npc in TUTORIAL_NPCS
+    )
+    clear, encrypted, seq = build_server_channel_packet(
+        session, message_bytes=messages, reliable=True
+    )
+    safe_udp_sendto(
+        base_sock, encrypted, addr, "tutorial NPC createEntity bundle"
+    )
+    session.tutorial_npc_details_sent = True
+    session.tutorial_npc_details_seq = seq
+    session.last_server_send = time.time()
+    log(
+        f"TX TUTORIAL NPC CREATES: reliable seq={seq}, "
+        f"count={len(TUTORIAL_NPCS)}, bytes={len(messages)}, "
+        f"cumAck={session.client_next_expected_seq}"
+    )
+    log(">>> Tutorial NPCs restored in spaces/so_origins.\n")
 
 def send_avatar_dummy_enter(base_sock: socket.socket, session: Session,
                             addr: tuple[str, int]) -> None:
@@ -1577,13 +1808,9 @@ def _build_character_info_wire(character: CharacterRecord) -> bytes:
     createNewAvatar() supplies PACKED_AVATAR_MODEL itself. Persisting those 60
     bytes keeps the exact appearance selected by the client across restarts.
     """
-    models = character.models_wire
-    if len(models) != 60:
-        log(
-            f"WARNING: createNewAvatar defaultModels was {len(models)} bytes, "
-            "expected 60; using zero PACKED_AVATAR_MODEL fallback"
-        )
-        models = b"\x00" * 60
+    models = normalise_avatar_models_wire(
+        character.models_wire
+    )
 
     return (
         _pack_bigworld_string(character.name)
@@ -1899,6 +2126,7 @@ def handle_base_channel_packet(data: bytes, addr: tuple[str, int],
                     character.models_wire
                 )
             )
+            session.active_gold_credit = character.gold_credit
 
             if not is_valid_world_position(
                 session.play_position
@@ -2049,8 +2277,7 @@ def handle_base_channel_packet(data: bytes, addr: tuple[str, int],
             f"cumulativeAck={packet.cumulative_ack}"
         )
         log(
-            ">>> createBasePlayer + name + defaultModels "
-            "accepted by client."
+            ">>> createBasePlayer BASE_AND_CLIENT data accepted by client."
         )
         log(
             ">>> createCellPlayer scheduled in 0.25 s.\n"
@@ -2068,7 +2295,10 @@ def handle_base_channel_packet(data: bytes, addr: tuple[str, int],
     ):
         session.player_cell_acked = True
         log(f">>> AVATAR CELL PLAYER ACK confirmed: cumulativeAck={packet.cumulative_ack}")
-        log(">>> Stage 19: createCellPlayer accepted; setting passTutorial now.\n")
+        log(
+            ">>> Stage 20: createCellPlayer initial state accepted; "
+            "confirming passTutorial.\n"
+        )
         if not session.player_tutorial_property_sent:
             send_player_pass_tutorial(base_sock, session, addr)
         return
@@ -2105,6 +2335,44 @@ def handle_base_channel_packet(data: bytes, addr: tuple[str, int],
             f">>> Stage 19 transport complete: "
             f"{session.play_geometry.decode('ascii')} mapping accepted by client.\n"
         )
+        if (
+            TUTORIAL_NPC_NETWORK_ENABLED
+            and
+            session.play_geometry == PLAYER_WORLD_STATION_GEOMETRY
+            and not session.tutorial_npc_details_sent
+        ):
+            send_tutorial_npc_details(base_sock, session, addr)
+        return
+
+    if (
+        session.tutorial_npc_enters_sent
+        and not session.tutorial_npc_enters_acked
+        and session.tutorial_npc_enters_seq >= 0
+        and packet.cumulative_ack is not None
+        and packet.cumulative_ack >= session.tutorial_npc_enters_seq + 1
+    ):
+        session.tutorial_npc_enters_acked = True
+        log(
+            f">>> TUTORIAL NPC ENTER ACK: "
+            f"cumulativeAck={packet.cumulative_ack}"
+        )
+        return
+
+    if (
+        session.tutorial_npc_details_sent
+        and not session.tutorial_npc_details_acked
+        and session.tutorial_npc_details_seq >= 0
+        and packet.cumulative_ack is not None
+        and packet.cumulative_ack >= session.tutorial_npc_details_seq + 1
+    ):
+        session.tutorial_npc_details_acked = True
+        log(
+            f">>> TUTORIAL NPC DETAILS ACK: "
+            f"cumulativeAck={packet.cumulative_ack}, "
+            f"count={len(TUTORIAL_NPCS)}.\n"
+        )
+        if not session.tutorial_npc_enters_sent:
+            send_tutorial_npc_enters(base_sock, session, addr)
         return
 
     # Stage 10 startup state machine.
@@ -2419,7 +2687,9 @@ def parse_plain_baseapp_header(plain: bytes) -> None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="SOEmulator Stage 18 - gameplay Ping/Pong")
+    ap = argparse.ArgumentParser(
+        description="SOEmulator Stage 20 - PlayerAvatar bootstrap"
+    )
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--login-port", type=int, default=22231)
     ap.add_argument("--base-host", default="127.0.0.1")
@@ -2804,7 +3074,6 @@ def main() -> None:
         log("\nStopped.")
     finally:
         for session in sessions:
-            for session in sessions:
             if (
                 session.active_character_id
                 and session.position_dirty
